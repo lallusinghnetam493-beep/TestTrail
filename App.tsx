@@ -1,5 +1,36 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { 
+  Trophy, 
+  Brain, 
+  BarChart3, 
+  Timer, 
+  Check, 
+  ChevronRight, 
+  ChevronLeft, 
+  LogOut, 
+  UserCircle,
+  Settings,
+  Trash2,
+  ShieldCheck,
+  Zap,
+  Languages,
+  ArrowRight,
+  CreditCard,
+  History,
+  AlertCircle,
+  Loader2,
+  Menu,
+  X,
+  Smartphone,
+  Search,
+  FileText,
+  Target,
+  CheckCircle2
+} from 'lucide-react';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
 import { 
   User, 
   SubscriptionStatus, 
@@ -7,8 +38,11 @@ import {
   TestResult, 
   AppConfig 
 } from './types';
-import { ICONS, COLORS } from './constants';
 import { generateQuestions } from './services/geminiService';
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 // --- Local Storage Keys ---
 const CONFIG_KEY = 'tt_config';
@@ -27,11 +61,14 @@ const App: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<'home' | 'auth' | 'dashboard' | 'payment' | 'test' | 'result' | 'admin' | 'profile'>('home');
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
   const [appConfig, setAppConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   const [testResults, setTestResults] = useState<TestResult[]>([]);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [testLanguage, setTestLanguage] = useState<'English' | 'Hindi'>('English');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Test Session State
   const [currentTest, setCurrentTest] = useState<{
@@ -58,7 +95,17 @@ const App: React.FC = () => {
 
     const savedResults = localStorage.getItem(RESULTS_KEY);
     if (savedResults) setTestResults(JSON.parse(savedResults));
+
+    const savedUsers = localStorage.getItem(USERS_KEY);
+    if (savedUsers) setUsers(JSON.parse(savedUsers));
   }, []);
+
+  // Sync users to localStorage whenever users state changes
+  useEffect(() => {
+    if (users.length > 0) {
+      localStorage.setItem(USERS_KEY, JSON.stringify(users));
+    }
+  }, [users]);
 
   // --- Local Auth Handlers ---
   const handleAuth = async (fullName: string, phone: string, pass: string) => {
@@ -66,9 +113,6 @@ const App: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const usersJson = localStorage.getItem(USERS_KEY);
-      const users: User[] = usersJson ? JSON.parse(usersJson) : [];
-
       if (authMode === 'signup') {
         if (!fullName.trim() || !phone.trim() || !pass.trim()) {
           throw new Error('All fields are required!');
@@ -82,14 +126,15 @@ const App: React.FC = () => {
           id: Math.random().toString(36).substr(2, 9),
           fullName,
           phone,
-          password: pass, // In a real app, never store plain text passwords
+          password: pass,
           subscription: SubscriptionStatus.FREE,
           trialsUsed: 0,
-          isAdmin: phone === '9999999999' // Mock admin condition
+          isAdmin: phone === '7745983504' || phone === '8839191411'
         };
 
-        users.push(newUser);
-        localStorage.setItem(USERS_KEY, JSON.stringify(users));
+        const newUsers = [...users, newUser];
+        setUsers(newUsers);
+        localStorage.setItem(USERS_KEY, JSON.stringify(newUsers));
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(newUser));
         setCurrentUser(newUser);
         setCurrentPage('dashboard');
@@ -99,8 +144,18 @@ const App: React.FC = () => {
           throw new Error('Invalid phone or password!');
         }
 
-        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
-        setCurrentUser(user);
+        // Ensure admin status is up to date
+        const isAdmin = phone === '7745983504' || phone === '8839191411';
+        const updatedUser = { ...user, isAdmin };
+        
+        if (user.isAdmin !== isAdmin) {
+          const newUsers = users.map(u => u.id === user.id ? updatedUser : u);
+          setUsers(newUsers);
+          localStorage.setItem(USERS_KEY, JSON.stringify(newUsers));
+        }
+
+        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
+        setCurrentUser(updatedUser);
         setCurrentPage('dashboard');
       }
     } catch (err: any) {
@@ -177,16 +232,9 @@ const App: React.FC = () => {
       const updatedTrials = currentUser.trialsUsed + 1;
       const updatedUser = { ...currentUser, trialsUsed: updatedTrials };
       
-      // Update in users list
-      const usersJson = localStorage.getItem(USERS_KEY);
-      if (usersJson) {
-        const users: User[] = JSON.parse(usersJson);
-        const userIndex = users.findIndex(u => u.id === currentUser.id);
-        if (userIndex > -1) {
-          users[userIndex] = updatedUser;
-          localStorage.setItem(USERS_KEY, JSON.stringify(users));
-        }
-      }
+      const newUsers = users.map(u => u.id === currentUser.id ? updatedUser : u);
+      setUsers(newUsers);
+      localStorage.setItem(USERS_KEY, JSON.stringify(newUsers));
 
       localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
       setCurrentUser(updatedUser);
@@ -227,16 +275,9 @@ const App: React.FC = () => {
     try {
       const updatedUser = { ...currentUser, subscription: SubscriptionStatus.PENDING, utr };
       
-      // Update in users list
-      const usersJson = localStorage.getItem(USERS_KEY);
-      if (usersJson) {
-        const users: User[] = JSON.parse(usersJson);
-        const userIndex = users.findIndex(u => u.id === currentUser.id);
-        if (userIndex > -1) {
-          users[userIndex] = updatedUser;
-          localStorage.setItem(USERS_KEY, JSON.stringify(users));
-        }
-      }
+      const newUsers = users.map(u => u.id === currentUser.id ? updatedUser : u);
+      setUsers(newUsers);
+      localStorage.setItem(USERS_KEY, JSON.stringify(newUsers));
 
       localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
       setCurrentUser(updatedUser);
@@ -252,21 +293,19 @@ const App: React.FC = () => {
   const approvePayment = (userId: string) => {
     setIsLoading(true);
     try {
-      const usersJson = localStorage.getItem(USERS_KEY);
-      if (usersJson) {
-        const users: User[] = JSON.parse(usersJson);
-        const userIndex = users.findIndex(u => u.id === userId);
-        if (userIndex > -1) {
-          users[userIndex].subscription = SubscriptionStatus.PRO;
-          users[userIndex].utr = undefined;
-          localStorage.setItem(USERS_KEY, JSON.stringify(users));
-          
-          if (currentUser?.id === userId) {
-            const updatedUser = { ...currentUser, subscription: SubscriptionStatus.PRO, utr: undefined };
-            localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
-            setCurrentUser(updatedUser);
-          }
+      const newUsers = users.map(u => {
+        if (u.id === userId) {
+          return { ...u, subscription: SubscriptionStatus.PRO, utr: undefined };
         }
+        return u;
+      });
+      setUsers(newUsers);
+      localStorage.setItem(USERS_KEY, JSON.stringify(newUsers));
+      
+      if (currentUser?.id === userId) {
+        const updatedUser = { ...currentUser, subscription: SubscriptionStatus.PRO, utr: undefined };
+        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
+        setCurrentUser(updatedUser);
       }
       alert("User approved successfully!");
     } catch (err: any) {
@@ -278,99 +317,213 @@ const App: React.FC = () => {
 
   // --- UI Components ---
   const Navbar = () => (
-    <nav className="fixed top-0 left-0 right-0 z-50 glass h-16 px-6 flex items-center justify-between border-b border-white/10">
-      <div className="flex items-center gap-2 cursor-pointer" onClick={() => setCurrentPage('home')}>
-        <div className="w-8 h-8 bg-indigo-500 rounded-lg flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/50">T</div>
-        <span className="text-xl font-bold tracking-tight">Test<span className="text-indigo-400">Trail</span></span>
+    <nav className="fixed top-0 left-0 right-0 z-50 glass h-20 px-6 flex items-center justify-between border-b border-white/10">
+      <div 
+        className="flex items-center gap-3 cursor-pointer group" 
+        onClick={() => setCurrentPage('home')}
+      >
+        <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center font-black text-white shadow-xl shadow-indigo-500/20 group-hover:scale-110 transition-transform">
+          T
+        </div>
+        <span className="text-2xl font-black tracking-tighter">
+          Test<span className="gradient-text">Trail</span>
+        </span>
       </div>
-      <div className="flex items-center gap-4">
+
+      <div className="hidden md:flex items-center gap-8">
         {currentUser ? (
           <>
-            {currentUser.isAdmin && (
-              <button onClick={() => setCurrentPage('admin')} className="text-sm font-medium text-purple-300 hover:text-purple-200">Admin</button>
-            )}
-            <button onClick={() => setCurrentPage('dashboard')} className="text-sm font-medium hover:text-indigo-400">Dashboard</button>
             <button 
-              onClick={() => setCurrentPage(prev => prev === 'profile' ? 'dashboard' : 'profile')} 
-              className={`p-2 rounded-full transition-all ${currentPage === 'profile' ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-500/40' : 'text-indigo-400 hover:bg-indigo-400/10'}`}
+              onClick={() => setCurrentPage('dashboard')} 
+              className={cn(
+                "text-sm font-bold uppercase tracking-widest transition-colors",
+                currentPage === 'dashboard' ? "text-indigo-400" : "text-slate-400 hover:text-slate-200"
+              )}
             >
-              <ICONS.UserCircle />
+              Dashboard
+            </button>
+            {currentUser.isAdmin && (
+              <button 
+                onClick={() => setCurrentPage('admin')} 
+                className={cn(
+                  "text-sm font-bold uppercase tracking-widest transition-colors",
+                  currentPage === 'admin' ? "text-purple-400" : "text-slate-400 hover:text-slate-200"
+                )}
+              >
+                Admin
+              </button>
+            )}
+            <button 
+              onClick={() => currentPage === 'profile' ? setCurrentPage('home') : setCurrentPage('profile')} 
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl transition-all border",
+                currentPage === 'profile' 
+                  ? "bg-indigo-500/10 border-indigo-500/30 text-indigo-400" 
+                  : "border-transparent text-slate-400 hover:bg-white/5"
+              )}
+            >
+              <UserCircle size={20} />
+              <span className="text-sm font-bold">{currentUser.fullName.split(' ')[0]}</span>
             </button>
           </>
         ) : (
           <button 
             onClick={() => { setAuthMode('login'); setCurrentPage('auth'); }}
-            className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 rounded-lg text-sm font-semibold transition-all shadow-lg shadow-indigo-500/20"
+            className="px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 rounded-xl text-sm font-black uppercase tracking-widest transition-all shadow-xl shadow-indigo-500/20 active:scale-95"
           >
             Login
           </button>
         )}
       </div>
+
+      <div className="md:hidden flex items-center gap-2">
+        {!currentUser && (
+          <button 
+            onClick={() => { setAuthMode('login'); setCurrentPage('auth'); }}
+            className="px-4 py-2 bg-indigo-500 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95"
+          >
+            Login
+          </button>
+        )}
+        
+        <button 
+          onClick={() => {
+            if (currentUser) {
+              if (currentPage === 'profile') {
+                setCurrentPage('home');
+              } else {
+                setCurrentPage('profile');
+              }
+              setIsMobileMenuOpen(false);
+            } else {
+              setIsMobileMenuOpen(!isMobileMenuOpen);
+            }
+          }}
+          className="transition-all active:scale-90"
+        >
+          {isMobileMenuOpen ? (
+            <div className="p-2 text-slate-400"><X /></div>
+          ) : (
+            currentUser ? (
+              <div className="w-10 h-10 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-400 border border-indigo-500/20">
+                <UserCircle size={24} />
+              </div>
+            ) : (
+              <div className="p-2 text-slate-400"><Menu /></div>
+            )
+          )}
+        </button>
+      </div>
+
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="absolute top-20 left-0 right-0 glass border-b border-white/10 p-6 flex flex-col gap-4 md:hidden"
+          >
+            {currentUser ? (
+              <>
+                <button onClick={() => { setCurrentPage('dashboard'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2">Dashboard</button>
+                {currentUser.isAdmin && <button onClick={() => { setCurrentPage('admin'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2 text-purple-400">Admin Panel</button>}
+                <button onClick={() => { setCurrentPage('profile'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2">Profile</button>
+                <button onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2 text-red-400">Logout</button>
+              </>
+            ) : (
+              <button onClick={() => { setAuthMode('login'); setCurrentPage('auth'); setIsMobileMenuOpen(false); }} className="w-full py-4 bg-indigo-500 rounded-2xl font-bold">Login / Signup</button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </nav>
   );
 
   const Home = () => (
-    <div className="pt-24 pb-12 px-6 min-h-screen flex flex-col items-center">
-      <div className="max-w-4xl w-full text-center space-y-8">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-bold uppercase tracking-widest animate-pulse">
-          Next-Gen Exam Prep
+    <div className="pt-32 pb-20 px-6 min-h-screen flex flex-col items-center overflow-hidden">
+      <motion.div 
+        initial={{ opacity: 0, y: 30 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.8, ease: "easeOut" }}
+        className="max-w-5xl w-full text-center space-y-10 relative"
+      >
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-[0.3em] animate-pulse">
+          <Zap size={12} /> Next-Gen Exam Prep
         </div>
-        <h1 className="text-5xl md:text-7xl font-extrabold leading-tight">
-          Conquer Govt Exams with <span className="gradient-text">AI Power</span>
+        
+        <h1 className="text-6xl md:text-8xl font-black leading-[0.9] tracking-tighter">
+          Conquer Govt Exams <br />
+          <span className="gradient-text">with AI Power</span>
         </h1>
-        <p className="text-slate-400 text-lg md:text-xl max-w-2xl mx-auto leading-relaxed">
-          Generate custom mock tests for UPSC, SSC, Banking, and Railways in seconds. Real patterns, real difficulty, real results.
+        
+        <p className="text-slate-400 text-lg md:text-2xl max-w-3xl mx-auto leading-relaxed font-medium">
+          Generate custom mock tests for UPSC, SSC, Banking, and Railways in seconds. 
+          Real patterns, real difficulty, real results.
         </p>
         
-        <div className="flex flex-col sm:flex-row gap-4 justify-center items-center pt-4">
+        <div className="flex flex-col sm:flex-row gap-5 justify-center items-center pt-6">
           <button 
             onClick={() => {
               if (currentUser) setCurrentPage('dashboard');
               else { setAuthMode('signup'); setCurrentPage('auth'); }
             }}
-            className="w-full sm:w-auto px-8 py-4 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-bold text-lg shadow-2xl shadow-indigo-500/40 transition-all flex items-center justify-center gap-2 group"
+            className="w-full sm:w-auto px-10 py-5 bg-indigo-500 hover:bg-indigo-600 rounded-[2rem] font-black text-lg shadow-2xl shadow-indigo-500/40 transition-all flex items-center justify-center gap-3 group active:scale-95"
           >
-            Start Free Trial <ICONS.ChevronRight />
+            Start Free Trial <ChevronRight className="group-hover:translate-x-1 transition-transform" />
           </button>
           <button 
              onClick={() => {
                if (currentUser) setCurrentPage('dashboard');
                else { setAuthMode('signup'); setCurrentPage('auth'); }
              }}
-             className="w-full sm:w-auto px-8 py-4 glass rounded-2xl font-bold text-lg hover:bg-white/10 transition-all">
+             className="w-full sm:w-auto px-10 py-5 glass rounded-[2rem] font-black text-lg hover:bg-white/10 transition-all border border-white/10 active:scale-95">
             View Pro Pricing
           </button>
         </div>
 
-        <div className="relative mt-20 h-64 md:h-96 w-full flex justify-center items-center">
-           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-indigo-500/20 rounded-full blur-[120px]"></div>
-           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 bg-purple-500/20 rounded-full blur-[100px]"></div>
-           <div className="relative glass-card w-full max-w-2xl h-full rounded-[2rem] p-8 flex flex-col justify-center items-center border-indigo-500/20 shadow-[0_20px_50px_rgba(8,_112,_184,_0.1)] animate-float">
-              <ICONS.Brain />
-              <div className="mt-6 flex flex-wrap justify-center gap-4">
-                {['SSC CGL', 'UPSC History', 'Bank PO', 'Railway Reasoning'].map(tag => (
-                  <span key={tag} className="px-4 py-2 glass rounded-xl text-xs font-semibold text-slate-300">
-                    {tag}
-                  </span>
-                ))}
+        <div className="relative mt-32 w-full max-w-4xl mx-auto">
+           <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-[120%] h-[120%] bg-indigo-500/10 rounded-full blur-[120px] -z-10"></div>
+           <motion.div 
+             initial={{ opacity: 0, scale: 0.9 }}
+             animate={{ opacity: 1, scale: 1 }}
+             transition={{ delay: 0.4, duration: 1 }}
+             className="relative glass p-1 rounded-[3rem] border-white/10 shadow-[0_40px_100px_rgba(0,0,0,0.5)]"
+           >
+              <div className="bg-slate-900/50 rounded-[2.8rem] p-10 md:p-16 flex flex-col justify-center items-center space-y-12 overflow-hidden">
+                 <div className="p-5 bg-indigo-500/10 rounded-3xl text-indigo-400 border border-indigo-500/20 animate-float">
+                    <Brain size={64} strokeWidth={1.5} />
+                 </div>
+                 
+                 <div className="flex flex-wrap justify-center gap-3">
+                   {['SSC CGL', 'UPSC History', 'Bank PO', 'Railway Reasoning', 'Static GK'].map((tag, i) => (
+                     <motion.span 
+                       initial={{ opacity: 0, x: -20 }}
+                       animate={{ opacity: 1, x: 0 }}
+                       transition={{ delay: 0.6 + (i * 0.1) }}
+                       key={tag} 
+                       className="px-5 py-2.5 glass rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-400 border border-white/5"
+                     >
+                       {tag}
+                     </motion.span>
+                   ))}
+                 </div>
+
+                 <div className="grid grid-cols-3 gap-12 w-full pt-8 border-t border-white/5">
+                   {[
+                     { val: '50K+', label: 'Tests Generated' },
+                     { val: '4.9/5', label: 'Student Rating' },
+                     { val: '99%', label: 'Accuracy' }
+                   ].map((stat, i) => (
+                     <div key={i} className="text-center space-y-2">
+                       <div className="text-3xl md:text-5xl font-black text-white tracking-tighter">{stat.val}</div>
+                       <div className="text-[9px] text-slate-500 font-black uppercase tracking-[0.2em]">{stat.label}</div>
+                     </div>
+                   ))}
+                 </div>
               </div>
-              <div className="mt-8 grid grid-cols-3 gap-8 w-full">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-white">50K+</div>
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wider">Tests Generated</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-white">4.9/5</div>
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wider">Student Rating</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-white">99%</div>
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wider">Accuracy</div>
-                </div>
-              </div>
-           </div>
+           </motion.div>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 
@@ -380,197 +533,289 @@ const App: React.FC = () => {
     const [password, setPassword] = useState('');
     
     return (
-      <div className="pt-24 min-h-screen px-6 flex justify-center">
-        <div className="w-full max-md space-y-8">
-          <div className="text-center">
-            <h2 className="text-3xl font-bold">
+      <div className="pt-32 min-h-screen px-6 flex justify-center items-start">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="w-full max-w-md space-y-10"
+        >
+          <div className="text-center space-y-3">
+            <h2 className="text-5xl font-black tracking-tight">
               {authMode === 'login' ? 'Welcome Back' : 'Create Account'}
             </h2>
-            <p className="text-slate-400 mt-2">
+            <p className="text-slate-400 font-medium">
               {authMode === 'login' ? 'Continue your prep journey' : 'Join thousands of aspirants today'}
             </p>
           </div>
           
-          <div className="glass p-8 rounded-[2rem] space-y-6">
+          <div className="glass p-10 rounded-[3rem] space-y-8 shadow-2xl shadow-indigo-500/10 border-white/10">
             {error && (
-              <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 text-sm rounded-xl">
-                {error}
-              </div>
+              <motion.div 
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold rounded-2xl flex items-center gap-3"
+              >
+                <AlertCircle size={16} /> {error}
+              </motion.div>
             )}
-
-            <div className="space-y-4">
+            
+            <div className="space-y-5">
               {authMode === 'signup' && (
-                <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Full Name</label>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Full Name</label>
                   <input 
                     type="text" 
                     value={fullName}
                     onChange={e => setFullName(e.target.value)}
-                    className="w-full mt-1 px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-indigo-500 transition-all"
+                    className="w-full px-6 py-4 bg-white/[0.03] border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500/50 transition-all font-bold"
                     placeholder="Enter your name"
                   />
                 </div>
               )}
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Phone Number</label>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Phone Number</label>
                 <input 
                   type="tel" 
                   value={phone}
                   onChange={e => setPhone(e.target.value)}
-                  className="w-full mt-1 px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-indigo-500 transition-all"
-                  placeholder="9876543210"
+                  className="w-full px-6 py-4 bg-white/[0.03] border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500/50 transition-all font-bold"
+                  placeholder="10-digit number"
                 />
               </div>
-              <div>
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">Password</label>
+              <div className="space-y-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Password</label>
                 <input 
                   type="password" 
                   value={password}
                   onChange={e => setPassword(e.target.value)}
-                  className="w-full mt-1 px-4 py-3 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-indigo-500 transition-all"
+                  className="w-full px-6 py-4 bg-white/[0.03] border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500/50 transition-all font-bold"
                   placeholder="••••••••"
                 />
               </div>
             </div>
+
             <button 
               disabled={isLoading}
               onClick={() => handleAuth(fullName, phone, password)}
-              className="w-full py-4 bg-indigo-500 hover:bg-indigo-600 rounded-xl font-bold shadow-lg shadow-indigo-500/20 disabled:opacity-50"
+              className="w-full py-5 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 transition-all flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-50"
             >
-              {isLoading ? 'Processing...' : (authMode === 'login' ? 'Sign In' : 'Sign Up')}
+              {isLoading ? <Loader2 className="animate-spin" /> : (authMode === 'login' ? 'Login Now' : 'Create Account')}
+              {!isLoading && <ArrowRight size={20} />}
             </button>
 
-            <p className="text-center text-sm text-slate-500">
+            <p className="text-center text-sm text-slate-500 font-medium">
               {authMode === 'login' ? "Don't have an account?" : "Already have an account?"}{' '}
               <button 
                 onClick={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setError(null); }}
-                className="text-indigo-400 font-bold hover:underline"
+                className="text-indigo-400 font-black hover:underline underline-offset-4"
               >
                 {authMode === 'login' ? 'Sign Up' : 'Log In'}
               </button>
             </p>
+
+            <div className="pt-6 border-t border-white/5 text-center">
+              <button 
+                onClick={() => {
+                  if (window.confirm("This will clear all local data. Continue?")) {
+                    localStorage.clear();
+                    window.location.reload();
+                  }
+                }}
+                className="text-[10px] text-slate-600 hover:text-red-400 uppercase tracking-[0.2em] font-black transition-colors"
+              >
+                Reset App Data
+              </button>
+            </div>
           </div>
-        </div>
+        </motion.div>
       </div>
     );
   };
 
   const Dashboard = () => {
     const [topic, setTopic] = useState('');
-
+    const [testLanguage, setTestLanguage] = useState<'English' | 'Hindi'>('English');
+    
     return (
-      <div className="pt-24 pb-12 px-6 max-w-5xl mx-auto space-y-8">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <h2 className="text-3xl font-bold">Namaste, {currentUser?.fullName}!</h2>
-            <p className="text-slate-400">Ready for today's prep challenge?</p>
+      <div className="pt-32 pb-20 px-6 max-w-5xl mx-auto space-y-12">
+        <motion.div 
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6"
+        >
+          <div className="space-y-1">
+            <h2 className="text-4xl font-black tracking-tight">Hello, {currentUser?.fullName.split(' ')[0]}!</h2>
+            <p className="text-slate-400 font-medium italic">Ready for today's prep challenge?</p>
           </div>
-          <div className={`px-4 py-2 rounded-full text-xs font-bold uppercase tracking-widest ${
-            currentUser?.subscription === SubscriptionStatus.PRO ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' :
-            currentUser?.subscription === SubscriptionStatus.PENDING ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
-            'bg-slate-500/20 text-slate-400 border border-slate-500/30'
-          }`}>
+          <div className={cn(
+            "px-6 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border shadow-xl",
+            currentUser?.subscription === SubscriptionStatus.PRO 
+              ? 'bg-green-500/10 text-green-400 border-green-500/30 shadow-green-500/10' 
+              : currentUser?.subscription === SubscriptionStatus.PENDING 
+              ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30 shadow-yellow-500/10'
+              : 'bg-slate-500/10 text-slate-400 border-slate-500/30 shadow-slate-500/5'
+          )}>
             {currentUser?.subscription === SubscriptionStatus.PRO ? 'Pro Plan Active' : 
              currentUser?.subscription === SubscriptionStatus.PENDING ? 'Verification Pending' : 
              'Free Plan'}
           </div>
-        </div>
+        </motion.div>
 
         {currentUser?.subscription === SubscriptionStatus.FREE && (
-           <div className="glass p-6 rounded-[1.5rem] bg-indigo-900/10 border-indigo-500/20 flex flex-col md:flex-row justify-between items-center gap-6">
-              <div className="space-y-1">
-                <h3 className="text-xl font-bold flex items-center gap-2">Upgrade to Pro <span className="text-xs py-0.5 px-2 bg-indigo-500 rounded text-white font-black italic">HOT</span></h3>
-                <p className="text-slate-400 text-sm">Unlock unlimited 100-question tests with timer for just ₹100/mo.</p>
+           <motion.div 
+             initial={{ opacity: 0, y: 20 }}
+             animate={{ opacity: 1, y: 0 }}
+             className="glass p-8 rounded-[2.5rem] bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border-indigo-500/20 flex flex-col md:flex-row justify-between items-center gap-8"
+           >
+              <div className="space-y-2 text-center md:text-left">
+                <h3 className="text-2xl font-black flex items-center justify-center md:justify-start gap-3">
+                  Upgrade to Pro <span className="text-[10px] py-1 px-3 bg-indigo-500 rounded-full text-white font-black italic tracking-widest">HOT</span>
+                </h3>
+                <p className="text-slate-400 font-medium">Unlock unlimited 100-question tests with timer for just ₹{appConfig.subscriptionPrice}/mo.</p>
               </div>
               <button 
                 onClick={() => setCurrentPage('payment')}
-                className="w-full md:w-auto px-6 py-3 bg-indigo-500 hover:bg-indigo-600 rounded-xl font-bold shadow-lg shadow-indigo-500/20 whitespace-nowrap"
+                className="w-full md:w-auto px-10 py-4 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 whitespace-nowrap transition-all active:scale-95"
               >
                 Go Pro Now
               </button>
-           </div>
+           </motion.div>
         )}
 
-        <div className="glass p-8 rounded-[2rem] space-y-6">
-          <div className="space-y-2">
-            <h3 className="text-2xl font-bold">New Mock Test</h3>
-            <p className="text-slate-400">What are we studying today? Enter exam name or subject.</p>
-          </div>
-          {error && <p className="text-red-400 text-sm px-2">{error}</p>}
-          
-          <div className="space-y-4">
-            <div className="relative">
-              <input 
-                type="text"
-                value={topic}
-                onChange={e => setTopic(e.target.value)}
-                placeholder="e.g. SSC CGL Quant, Modern History, Static GK..."
-                className="w-full px-6 py-5 bg-white/5 border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500 text-lg transition-all"
-              />
-            </div>
-
-            <div className="flex items-center gap-4 px-2">
-              <span className="text-xs font-bold uppercase tracking-widest text-slate-500">Select Language:</span>
-              <div className="flex glass p-1 rounded-xl">
-                <button 
-                  onClick={() => setTestLanguage('English')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${testLanguage === 'English' ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
-                >
-                  English
-                </button>
-                <button 
-                  onClick={() => setTestLanguage('Hindi')}
-                  className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${testLanguage === 'Hindi' ? 'bg-indigo-500 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'}`}
-                >
-                  Hindi
-                </button>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+          <div className="lg:col-span-2 space-y-8">
+            <div className="glass p-10 rounded-[3rem] space-y-8 shadow-2xl shadow-indigo-500/5 border-white/10">
+              <div className="space-y-3">
+                <h3 className="text-3xl font-black tracking-tight">New Mock Test</h3>
+                <p className="text-slate-400 font-medium">What are we studying today? Enter exam name or subject.</p>
               </div>
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row gap-4">
-            <button 
-              disabled={isLoading}
-              onClick={() => startTest(topic, false, testLanguage)}
-              className="flex-1 py-4 glass hover:bg-white/10 rounded-2xl font-bold text-slate-300 disabled:opacity-50"
-            >
-              {isLoading ? 'Generating...' : `Start 5-Q Free Trial (${testLanguage})`}
-            </button>
-            <button 
-              disabled={isLoading || currentUser?.subscription !== SubscriptionStatus.PRO}
-              onClick={() => startTest(topic, true, testLanguage)}
-              className="flex-1 py-4 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-bold shadow-xl shadow-indigo-500/30 disabled:opacity-50 disabled:bg-slate-700"
-            >
-              {currentUser?.subscription === SubscriptionStatus.PRO ? (isLoading ? 'Generating...' : `Start Full 100-Q Test (${testLanguage})`) : 'Full Test (Pro Only)'}
-            </button>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <h3 className="text-xl font-bold flex items-center gap-2">
-            <ICONS.Chart /> Recent Performance
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {testResults.length === 0 ? (
-              <div className="col-span-full glass p-12 text-center rounded-[1.5rem] text-slate-500">
-                No tests taken yet. Start your first prep today!
-              </div>
-            ) : (
-              testResults.map(res => (
-                <div key={res.id} className="glass-card p-6 rounded-[1.5rem] flex items-center justify-between">
-                  <div className="space-y-1">
-                    <h4 className="font-bold">{res.examName}</h4>
-                    <p className="text-xs text-slate-500">{new Date(res.date).toLocaleDateString()} • {res.total} Questions</p>
+              
+              <div className="space-y-6">
+                <div className="relative group">
+                  <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                    <Search size={24} />
                   </div>
-                  <div className="text-right">
-                    <div className={`text-2xl font-black ${res.percentage >= 70 ? 'text-green-400' : res.percentage >= 40 ? 'text-yellow-400' : 'text-red-400'}`}>
-                      {res.percentage.toFixed(0)}%
-                    </div>
-                    <div className="text-[10px] text-slate-500 uppercase tracking-tighter">Accuracy</div>
+                  <input 
+                    type="text"
+                    value={topic}
+                    onChange={e => setTopic(e.target.value)}
+                    placeholder="e.g. SSC CGL Quant, Modern History..."
+                    className="w-full pl-16 pr-6 py-6 bg-white/[0.03] border border-white/10 rounded-[2rem] focus:outline-none focus:border-indigo-500/50 text-xl transition-all font-bold"
+                  />
+                </div>
+
+                <div className="flex items-center gap-6 px-2">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Select Language:</span>
+                  <div className="flex glass p-1.5 rounded-2xl border border-white/5">
+                    {(['English', 'Hindi'] as const).map(lang => (
+                      <button 
+                        key={lang}
+                        onClick={() => setTestLanguage(lang)}
+                        className={cn(
+                          "px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all",
+                          testLanguage === lang ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20" : "text-slate-500 hover:text-slate-300"
+                        )}
+                      >
+                        {lang}
+                      </button>
+                    ))}
                   </div>
                 </div>
-              ))
-            )}
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-5 pt-4">
+                <button 
+                  disabled={isLoading}
+                  onClick={() => startTest(topic, false, testLanguage)}
+                  className="flex-1 py-5 glass hover:bg-white/10 rounded-2xl font-black text-slate-300 border border-white/10 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
+                >
+                  {isLoading ? <Loader2 className="animate-spin" /> : <Zap size={20} />}
+                  {isLoading ? 'Generating...' : `5-Q Trial (${testLanguage})`}
+                </button>
+                <button 
+                  disabled={isLoading || currentUser?.subscription !== SubscriptionStatus.PRO}
+                  onClick={() => startTest(topic, true, testLanguage)}
+                  className="flex-1 py-5 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-white shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:bg-slate-800 disabled:text-slate-500 flex items-center justify-center gap-3"
+                >
+                  {isLoading ? <Loader2 className="animate-spin" /> : <Trophy size={20} />}
+                  {currentUser?.subscription === SubscriptionStatus.PRO 
+                    ? (isLoading ? 'Generating...' : `Full 100-Q Test (${testLanguage})`) 
+                    : 'Full Test (Pro Only)'}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <h3 className="text-2xl font-black flex items-center gap-3 px-2 tracking-tight">
+                <History className="text-indigo-400" /> Recent Performance
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {testResults.length === 0 ? (
+                  <div className="col-span-full glass p-16 text-center rounded-[3rem] border-white/5">
+                    <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-600">
+                      <FileText size={32} />
+                    </div>
+                    <p className="text-slate-500 font-bold">No tests taken yet. Start your first prep today!</p>
+                  </div>
+                ) : (
+                  testResults.map((res, i) => (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: i * 0.1 }}
+                      key={res.id} 
+                      className="glass p-6 rounded-[2.5rem] flex items-center justify-between border-white/5 hover:border-indigo-500/30 transition-colors group"
+                    >
+                      <div className="space-y-1">
+                        <h4 className="font-black text-lg group-hover:text-indigo-400 transition-colors">{res.examName}</h4>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                          {new Date(res.date).toLocaleDateString()} • {res.total} Qs
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <div className={cn(
+                          "text-3xl font-black tracking-tighter",
+                          res.percentage >= 70 ? 'text-green-400' : res.percentage >= 40 ? 'text-yellow-400' : 'text-red-400'
+                        )}>
+                          {res.percentage.toFixed(0)}%
+                        </div>
+                        <div className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-600">Accuracy</div>
+                      </div>
+                    </motion.div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-8">
+            <div className="glass p-8 rounded-[3rem] border-white/10 space-y-6">
+              <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Quick Stats</h4>
+              <div className="space-y-6">
+                {[
+                  { label: 'Total Tests', val: testResults.length, icon: FileText, color: 'text-blue-400' },
+                  { label: 'Avg Accuracy', val: `${(testResults.reduce((acc, r) => acc + r.percentage, 0) / (testResults.length || 1)).toFixed(0)}%`, icon: Target, color: 'text-emerald-400' },
+                  { label: 'Trial Left', val: currentUser?.trialsLeft || 0, icon: Zap, color: 'text-amber-400' }
+                ].map((stat, i) => (
+                  <div key={i} className="flex items-center gap-4">
+                    <div className={cn("p-3 rounded-2xl bg-white/5", stat.color)}>
+                      <stat.icon size={20} />
+                    </div>
+                    <div>
+                      <div className="text-2xl font-black tracking-tighter">{stat.val}</div>
+                      <div className="text-[9px] font-black uppercase tracking-widest text-slate-500">{stat.label}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="glass p-8 rounded-[3rem] border-white/10 bg-gradient-to-br from-purple-500/5 to-indigo-500/5">
+              <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 mb-6">Study Tip</h4>
+              <p className="text-slate-400 text-sm leading-relaxed font-medium italic">
+                "Consistency is key. Even a 5-question mock test daily can significantly improve your retention over time."
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -583,112 +828,172 @@ const App: React.FC = () => {
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiUri)}`;
 
     return (
-      <div className="pt-24 pb-12 px-6 flex justify-center">
-        <div className="w-full max-w-xl space-y-8">
-          <div className="text-center space-y-2">
-            <h2 className="text-4xl font-black">Upgrade to <span className="gradient-text">Pro</span></h2>
-            <p className="text-slate-400">Unlock unlimited AI generation and compete at elite levels.</p>
+      <div className="pt-32 pb-20 px-6 flex justify-center items-start min-h-screen">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="w-full max-w-xl space-y-10"
+        >
+          <div className="text-center space-y-3">
+            <h2 className="text-5xl font-black tracking-tight">Upgrade to <span className="gradient-text">Pro</span></h2>
+            <p className="text-slate-400 font-medium">Unlock unlimited AI generation and compete at elite levels.</p>
           </div>
-          <div className="glass p-8 rounded-[2.5rem] space-y-8 text-center">
-            <div className="space-y-4">
-              <div className="relative w-64 h-64 bg-white mx-auto rounded-3xl flex items-center justify-center p-4 shadow-[0_0_40px_rgba(99,102,241,0.2)]">
-                <img src={qrUrl} alt="UPI Payment QR" className="w-full h-full object-contain" />
+          
+          <div className="glass p-10 rounded-[3rem] space-y-10 text-center shadow-2xl shadow-indigo-500/10 border-white/10">
+            <div className="space-y-8">
+              <div className="relative w-72 h-72 bg-white mx-auto rounded-[2.5rem] flex items-center justify-center p-6 shadow-[0_0_60px_rgba(99,102,241,0.3)] group overflow-hidden">
+                <img src={qrUrl} alt="UPI Payment QR" className="w-full h-full object-contain group-hover:scale-110 transition-transform duration-500" />
+                <div className="absolute inset-0 bg-indigo-500/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
               </div>
 
               <div className="pt-4">
-                <a href={upiUri} className="inline-flex items-center justify-center gap-2 w-full py-4 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 rounded-2xl font-black shadow-xl shadow-indigo-500/20 transition-all active:scale-[0.98]">
-                  Pay via UPI App <ICONS.ChevronRight />
+                <a 
+                  href={upiUri} 
+                  className="inline-flex items-center justify-center gap-3 w-full py-6 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 transition-all active:scale-95"
+                >
+                  Pay via UPI App <ArrowRight size={24} />
                 </a>
               </div>
 
               <div className="pt-2 space-y-1">
-                <p className="text-slate-500 text-sm font-bold uppercase tracking-widest">Amount to be Paid</p>
-                <div className="text-5xl font-black text-white">₹{appConfig.subscriptionPrice}</div>
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Total Amount</p>
+                <div className="text-6xl font-black text-white tracking-tighter">₹{appConfig.subscriptionPrice}</div>
               </div>
             </div>
 
-            <div className="space-y-4 text-left border-t border-white/5 pt-8">
-              <div className="space-y-1">
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-500 ml-1">After Payment, Enter UTR / Transaction ID</label>
+            <div className="space-y-6 text-left border-t border-white/5 pt-10">
+              <div className="space-y-3">
+                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1 flex items-center gap-2">
+                  <AlertCircle size={14} className="text-indigo-400" /> Enter 12-digit UTR / Transaction ID
+                </label>
                 <input 
                   type="text" 
                   value={utr}
                   onChange={e => setUtr(e.target.value)}
-                  className="w-full px-4 py-4 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:border-indigo-500 transition-all text-center tracking-widest font-mono text-lg"
-                  placeholder="Enter 12-digit UTR Number"
+                  className="w-full px-6 py-5 bg-white/[0.03] border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500/50 transition-all text-center tracking-[0.3em] font-mono text-2xl font-bold"
+                  placeholder="0000 0000 0000"
                 />
               </div>
               <button 
+                disabled={isLoading || utr.length < 6}
                 onClick={() => handlePaymentSubmit(utr)}
-                className="w-full py-4 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-bold shadow-xl shadow-indigo-500/30 transition-all active:scale-[0.98]"
+                className="w-full py-5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-black text-lg transition-all active:scale-95 disabled:opacity-30 flex items-center justify-center gap-3"
               >
-                Submit for Verification
+                {isLoading ? <Loader2 className="animate-spin" /> : <CheckCircle2 size={20} />}
+                {isLoading ? 'Verifying...' : 'Submit for Verification'}
               </button>
             </div>
+
+            <div className="flex items-center justify-center gap-6 pt-4">
+               {['Secure', 'Instant', '24/7 Support'].map(tag => (
+                 <div key={tag} className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-600">
+                   <div className="w-1 h-1 bg-indigo-500 rounded-full"></div> {tag}
+                 </div>
+               ))}
+            </div>
           </div>
-        </div>
+        </motion.div>
       </div>
     );
   };
 
   const ProfilePage = () => {
     if (!currentUser) return null;
+
     return (
-      <div className="pt-24 pb-12 px-6 flex flex-col items-center max-w-2xl mx-auto space-y-8">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="pt-24 pb-12 px-6 flex flex-col items-center max-w-2xl mx-auto space-y-8"
+      >
         <div className="text-center space-y-4">
-          <div className="w-24 h-24 bg-indigo-500/20 rounded-full mx-auto flex items-center justify-center text-indigo-400">
-            <ICONS.UserCircle />
+          <div className="w-24 h-24 bg-indigo-500/10 rounded-full mx-auto flex items-center justify-center text-indigo-400 border border-indigo-500/20">
+            <UserCircle size={48} />
           </div>
-          <h2 className="text-4xl font-black">{currentUser.fullName}</h2>
+          <h2 className="text-4xl font-black tracking-tight">{currentUser.fullName}</h2>
           <p className="text-slate-400">Manage your profile and subscription</p>
         </div>
 
-        <div className="w-full glass p-8 rounded-[2.5rem] space-y-6">
-          <div className="space-y-4">
-            <div className="flex justify-between items-center py-4 border-b border-white/5">
-              <span className="text-slate-500 text-sm font-bold uppercase tracking-widest">Phone Number</span>
-              <span className="font-bold">{currentUser.phone}</span>
-            </div>
-            <div className="flex justify-between items-center py-4 border-b border-white/5">
-              <span className="text-slate-500 text-sm font-bold uppercase tracking-widest">Subscription</span>
-              <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-                currentUser.subscription === SubscriptionStatus.PRO ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' :
-                currentUser.subscription === SubscriptionStatus.PENDING ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
-                'bg-slate-500/20 text-slate-400 border border-slate-500/30'
-              }`}>
-                {currentUser.subscription} Status
-              </span>
-            </div>
-            <div className="flex justify-between items-center py-4 border-b border-white/5">
-              <span className="text-slate-500 text-sm font-bold uppercase tracking-widest">Free Trials Used</span>
-              <span className="font-bold">{currentUser.trialsUsed}/3</span>
+        <div className="w-full glass p-8 rounded-[2.5rem] space-y-8">
+          <div className="space-y-6">
+            <div className="space-y-4">
+              <div className="flex justify-between items-center p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05]">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-slate-500/10 rounded-lg text-slate-400">
+                    <UserCircle size={18} />
+                  </div>
+                  <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">Full Name</span>
+                </div>
+                <span className="font-bold text-slate-200">{currentUser.fullName}</span>
+              </div>
+              <div className="flex justify-between items-center p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05]">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-slate-500/10 rounded-lg text-slate-400">
+                    <Smartphone size={18} />
+                  </div>
+                  <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">Phone Number</span>
+                </div>
+                <span className="font-bold text-slate-200">{currentUser.phone}</span>
+              </div>
+
+              <div className="flex justify-between items-center p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05]">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-400">
+                    <ShieldCheck size={18} />
+                  </div>
+                  <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">Subscription</span>
+                </div>
+                <span className={cn(
+                  "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border",
+                  currentUser.subscription === SubscriptionStatus.PRO ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' :
+                  currentUser.subscription === SubscriptionStatus.PENDING ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' :
+                  'bg-slate-500/20 text-slate-400 border-slate-500/30'
+                )}>
+                  {currentUser.subscription}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05]">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400">
+                    <Zap size={18} />
+                  </div>
+                  <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">Free Trials</span>
+                </div>
+                <span className="font-bold text-slate-200">{currentUser.trialsUsed}/3</span>
+              </div>
             </div>
           </div>
 
-          <div className="pt-8">
+          <div className="pt-4 space-y-3">
+            <button 
+              onClick={() => setCurrentPage('dashboard')}
+              className="w-full py-4 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all border border-indigo-500/20"
+            >
+              <BarChart3 size={18} /> Dashboard
+            </button>
+            {currentUser.isAdmin && (
+              <button 
+                onClick={() => setCurrentPage('admin')}
+                className="w-full py-4 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all border border-purple-500/20"
+              >
+                <ShieldCheck size={18} /> Admin Panel
+              </button>
+            )}
             <button 
               onClick={handleLogout}
               className="w-full py-4 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all border border-red-500/20"
             >
-              <ICONS.Power /> Logout
+              <LogOut size={18} /> Logout
             </button>
           </div>
         </div>
-      </div>
+      </motion.div>
     );
   };
 
   const AdminPanel = () => {
-    const [users, setUsers] = useState<User[]>([]);
     const [upi, setUpi] = useState(appConfig.upiId);
-
-    useEffect(() => {
-      const fetchAllUsers = () => {
-        const usersJson = localStorage.getItem(USERS_KEY);
-        if (usersJson) setUsers(JSON.parse(usersJson));
-      };
-      fetchAllUsers();
-    }, []);
 
     const updateConfig = () => {
       const newConfig = { ...appConfig, upiId: upi };
@@ -697,58 +1002,139 @@ const App: React.FC = () => {
       alert("Config Updated!");
     };
 
+    const clearAllData = () => {
+      if (window.confirm("Are you sure? This will delete all users, results, and reset the app.")) {
+        localStorage.clear();
+        window.location.reload();
+      }
+    };
+
+    const deleteUser = (userId: string) => {
+      if (window.confirm("Delete this user?")) {
+        const filtered = users.filter(u => u.id !== userId);
+        setUsers(filtered);
+        localStorage.setItem(USERS_KEY, JSON.stringify(filtered));
+        if (currentUser?.id === userId) {
+          handleLogout();
+        }
+      }
+    };
+
     return (
-      <div className="pt-24 pb-12 px-6 max-w-5xl mx-auto space-y-12">
-        <h2 className="text-4xl font-black">Admin <span className="text-purple-400">Control Center</span></h2>
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="pt-24 pb-12 px-6 max-w-6xl mx-auto space-y-12"
+      >
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+          <div className="space-y-1">
+            <h2 className="text-4xl font-black tracking-tight">Admin <span className="text-indigo-400">Control Center</span></h2>
+            <p className="text-slate-500 font-medium">Manage platform configuration and user access</p>
+          </div>
+          <button 
+            onClick={clearAllData}
+            className="px-6 py-3 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-2xl text-xs font-black uppercase tracking-[0.2em] transition-all flex items-center gap-2"
+          >
+            <Trash2 size={16} /> Clear All Data
+          </button>
+        </div>
         
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          <div className="md:col-span-1 space-y-6">
-            <div className="glass p-6 rounded-[2rem] space-y-4">
-              <h3 className="font-bold text-lg">Platform Settings</h3>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-500 uppercase">Backend UPI ID</label>
-                <input 
-                  type="text" 
-                  value={upi}
-                  onChange={e => setUpi(e.target.value)}
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl"
-                  placeholder="e.g. yourname@upi"
-                />
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <div className="lg:col-span-4 space-y-6">
+            <div className="glass p-8 rounded-[2.5rem] space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-500/10 rounded-xl text-purple-400">
+                  <Settings size={20} />
+                </div>
+                <h3 className="font-bold text-xl">Platform Settings</h3>
               </div>
-              <button onClick={updateConfig} className="w-full py-3 bg-purple-500 rounded-xl font-bold">Save Settings</button>
+              
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Backend UPI ID</label>
+                  <input 
+                    type="text" 
+                    value={upi}
+                    onChange={e => setUpi(e.target.value)}
+                    className="w-full px-5 py-4 bg-white/[0.03] border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500/50 transition-all font-mono text-sm"
+                    placeholder="e.g. yourname@upi"
+                  />
+                </div>
+                <button 
+                  onClick={updateConfig} 
+                  className="w-full py-4 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-[0.98]"
+                >
+                  Save Settings
+                </button>
+              </div>
             </div>
           </div>
 
-          <div className="md:col-span-2 glass p-8 rounded-[2rem] space-y-6">
-            <h3 className="font-bold text-xl">Manage Users & Payments</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left">
+          <div className="lg:col-span-8 glass p-8 rounded-[2.5rem] space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-indigo-500/10 rounded-xl text-indigo-400">
+                <ShieldCheck size={20} />
+              </div>
+              <h3 className="font-bold text-xl">User Management</h3>
+            </div>
+
+            <div className="overflow-x-auto -mx-4 px-4">
+              <table className="w-full text-left border-separate border-spacing-y-3">
                 <thead>
-                  <tr className="border-b border-white/10 text-slate-500 text-xs font-black uppercase tracking-widest">
-                    <th className="pb-4">Phone</th>
-                    <th className="pb-4">Status</th>
-                    <th className="pb-4">UTR</th>
-                    <th className="pb-4">Action</th>
+                  <tr className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em]">
+                    <th className="px-4 pb-2">User</th>
+                    <th className="px-4 pb-2">Status</th>
+                    <th className="px-4 pb-2">UTR</th>
+                    <th className="px-4 pb-2 text-right">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-white/5">
+                <tbody>
                   {users.map(user => (
-                    <tr key={user.id}>
-                      <td className="py-4 font-bold">{user.phone}</td>
-                      <td className="py-4">
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-black uppercase ${
-                          user.subscription === SubscriptionStatus.PRO ? 'bg-green-500/20 text-green-400' :
-                          user.subscription === SubscriptionStatus.PENDING ? 'bg-yellow-500/20 text-yellow-400' :
-                          'bg-slate-500/20 text-slate-400'
-                        }`}>
+                    <tr key={user.id} className="group">
+                      <td className="px-4 py-4 bg-white/[0.02] rounded-l-2xl border-y border-l border-white/[0.05]">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 font-bold text-xs">
+                            {user.fullName.charAt(0)}
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="font-bold text-slate-200">{user.fullName}</span>
+                            <span className="text-[10px] text-slate-500 font-mono">{user.phone}</span>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-4 bg-white/[0.02] border-y border-white/[0.05]">
+                        <span className={cn(
+                          "text-[9px] px-2 py-1 rounded-lg font-black uppercase tracking-widest border",
+                          user.subscription === SubscriptionStatus.PRO ? 'bg-green-500/10 text-green-400 border-green-500/20' :
+                          user.subscription === SubscriptionStatus.PENDING ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
+                          'bg-slate-500/10 text-slate-400 border-slate-500/20'
+                        )}>
                           {user.subscription}
                         </span>
                       </td>
-                      <td className="py-4 text-xs font-mono">{user.utr || '-'}</td>
-                      <td className="py-4">
-                        {user.subscription === SubscriptionStatus.PENDING && (
-                          <button onClick={() => approvePayment(user.id)} className="px-3 py-1 bg-indigo-500 text-xs font-bold rounded-lg hover:bg-indigo-600 transition-colors">Approve</button>
-                        )}
+                      <td className="px-4 py-4 bg-white/[0.02] border-y border-white/[0.05]">
+                        <span className="text-[10px] font-mono text-slate-400">{user.utr || '—'}</span>
+                      </td>
+                      <td className="px-4 py-4 bg-white/[0.02] rounded-r-2xl border-y border-r border-white/[0.05] text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          {user.subscription === SubscriptionStatus.PENDING && (
+                            <button 
+                              onClick={() => approvePayment(user.id)} 
+                              className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-indigo-500/20"
+                            >
+                              Approve
+                            </button>
+                          )}
+                          {!user.isAdmin && (
+                            <button 
+                              onClick={() => deleteUser(user.id)} 
+                              className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
+                              title="Delete User"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -757,7 +1143,7 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
-      </div>
+      </motion.div>
     );
   };
 
@@ -782,7 +1168,7 @@ const App: React.FC = () => {
           </div>
           {currentTest.isPro && (
             <div className="flex items-center gap-2 px-4 py-2 bg-indigo-500/20 text-indigo-400 rounded-xl font-bold">
-              <ICONS.Timer />
+              <Timer size={24} />
               <span className="text-xl tabular-nums">{formatTime(timeLeft)}</span>
             </div>
           )}
@@ -819,7 +1205,7 @@ const App: React.FC = () => {
                   }`}>{String.fromCharCode(65 + idx)}</div>
                   <span className="font-medium">{opt}</span>
                 </div>
-                {selected === idx && <ICONS.Check />}
+                {selected === idx && <Check size={20} />}
               </button>
             ))}
           </div>
@@ -827,11 +1213,11 @@ const App: React.FC = () => {
 
         <div className="mt-8 flex gap-4">
           <button disabled={activeQuestionIndex === 0} onClick={() => setActiveQuestionIndex(prev => prev - 1)} className="px-6 py-4 glass rounded-2xl font-bold hover:bg-white/10 disabled:opacity-30 flex items-center gap-2">
-            <ICONS.ChevronLeft /> Previous
+            <ChevronLeft size={20} /> Previous
           </button>
           {activeQuestionIndex < currentTest.questions.length - 1 ? (
             <button disabled={!hasSelected} onClick={() => setActiveQuestionIndex(prev => prev + 1)} className={`flex-1 py-4 rounded-2xl font-bold shadow-lg flex items-center justify-center gap-2 transition-all ${hasSelected ? 'bg-indigo-500 hover:bg-indigo-600 shadow-indigo-500/20' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}>
-              Next <ICONS.ChevronRight />
+              Next <ChevronRight size={20} />
             </button>
           ) : (
             <button disabled={!hasSelected} onClick={submitTest} className={`flex-1 py-4 rounded-2xl font-bold shadow-lg transition-all ${hasSelected ? 'bg-green-500 hover:bg-green-600 shadow-green-500/20' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}>
@@ -881,7 +1267,7 @@ const App: React.FC = () => {
       <div className="pt-24 pb-12 px-6 flex flex-col items-center max-w-3xl mx-auto space-y-8">
         <div className="text-center space-y-2">
           <div className="w-20 h-20 bg-yellow-500/20 rounded-full mx-auto flex items-center justify-center text-yellow-500 animate-bounce">
-            <ICONS.Trophy />
+            <Trophy size={48} />
           </div>
           <h2 className="text-4xl font-black">Test Completed!</h2>
           <p className="text-slate-400">Great effort! Performance breakdown for <span className="text-white font-bold">{lastResult.examName}</span></p>

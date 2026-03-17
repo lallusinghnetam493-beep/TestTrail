@@ -3,7 +3,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Question } from "../types";
 
 export const generateQuestions = async (topic: string, count: number, language: string): Promise<Question[]> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   
   const prompt = `Generate ${count} multiple choice questions for Indian government exam preparation (like UPSC, SSC CGL, Banking, Railway) on the topic: "${topic}". 
   The questions and all options MUST be written in ${language}.

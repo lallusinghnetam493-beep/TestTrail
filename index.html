@@ -5,6 +5,58 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TestTrail - AI Mock Test Platform</title>
+    <script>
+      // Fix for libraries trying to overwrite window.fetch in environments where it is read-only
+      (function() {
+        const originalFetch = window.fetch;
+        
+        function protect(obj, prop, name) {
+          try {
+            if (!obj) return;
+            const descriptor = Object.getOwnPropertyDescriptor(obj, prop);
+            if (descriptor && !descriptor.configurable) {
+              console.warn('Property ' + prop + ' is not configurable on ' + name);
+              return;
+            }
+            Object.defineProperty(obj, prop, {
+              configurable: true,
+              enumerable: true,
+              get: function() { return originalFetch; },
+              set: function(v) { 
+                console.warn('Prevented overwrite of ' + prop + ' on ' + name);
+              }
+            });
+          } catch (e) {
+            console.warn('Failed to protect ' + prop + ' on ' + name);
+          }
+        }
+
+        protect(window, 'fetch', 'window');
+        protect(globalThis, 'fetch', 'globalThis');
+        if (typeof Window !== 'undefined') protect(Window.prototype, 'fetch', 'Window.prototype');
+
+        // Global fallback to prevent the app from crashing on fetch assignment
+        window.addEventListener('error', function(event) {
+          const msg = event.message || (event.error && event.error.message) || '';
+          if (msg.includes('fetch') && (msg.includes('getter') || msg.includes('read only'))) {
+            console.warn('Intercepted and suppressed fetch overwrite error:', msg);
+            event.preventDefault();
+            event.stopPropagation();
+            return true;
+          }
+        }, true);
+
+        // Also handle unhandledrejection just in case
+        window.addEventListener('unhandledrejection', function(event) {
+          const msg = (event.reason && event.reason.message) || '';
+          if (msg.includes('fetch') && (msg.includes('getter') || msg.includes('read only'))) {
+            console.warn('Intercepted and suppressed fetch overwrite promise rejection:', msg);
+            event.preventDefault();
+            event.stopPropagation();
+          }
+        });
+      })();
+    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
@@ -54,17 +106,7 @@
         100% { background-position: 200% 0; }
       }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react/": "https://esm.sh/react@^19.2.4/",
-    "react": "https://esm.sh/react@^19.2.4",
-    "@google/genai": "https://esm.sh/@google/genai@^1.40.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/"
-  }
-}
-</script>
-<link rel="stylesheet" href="/index.css">
+  <link rel="stylesheet" href="/index.css">
 </head>
   <body>
     <div id="root"></div>
