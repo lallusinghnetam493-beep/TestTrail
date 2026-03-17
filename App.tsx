@@ -174,8 +174,8 @@ const App: React.FC = () => {
   // --- Test Logic ---
   const startTest = async (topic: string, isPro: boolean, lang: 'English' | 'Hindi') => {
     if (!currentUser) return;
-    if (!isPro && currentUser.trialsUsed >= 3) {
-      setError("Free trials exhausted (3/3). Please upgrade to Pro!");
+    if (currentUser.subscription === SubscriptionStatus.FREE && currentUser.trialsUsed >= 3) {
+      setError("Free test limit reached (3/3). Please contact support for more access.");
       return;
     }
     if (!topic.trim()) {
@@ -228,7 +228,7 @@ const App: React.FC = () => {
     localStorage.setItem(RESULTS_KEY, JSON.stringify(newResults));
 
     // Update trial status if free
-    if (!currentTest.isPro) {
+    if (currentUser.subscription === SubscriptionStatus.FREE) {
       const updatedTrials = currentUser.trialsUsed + 1;
       const updatedUser = { ...currentUser, trialsUsed: updatedTrials };
       
@@ -243,7 +243,7 @@ const App: React.FC = () => {
     setLastResult(result);
     setCurrentPage('result');
     setCurrentTest(null);
-  }, [currentTest, currentUser, userAnswers, testResults]);
+  }, [currentTest, currentUser, userAnswers, testResults, users]);
 
   // Timer Effect
   useEffect(() => {
@@ -469,15 +469,7 @@ const App: React.FC = () => {
             }}
             className="w-full sm:w-auto px-10 py-5 bg-indigo-500 hover:bg-indigo-600 rounded-[2rem] font-black text-lg shadow-2xl shadow-indigo-500/40 transition-all flex items-center justify-center gap-3 group active:scale-95"
           >
-            Start Free Trial <ChevronRight className="group-hover:translate-x-1 transition-transform" />
-          </button>
-          <button 
-             onClick={() => {
-               if (currentUser) setCurrentPage('dashboard');
-               else { setAuthMode('signup'); setCurrentPage('auth'); }
-             }}
-             className="w-full sm:w-auto px-10 py-5 glass rounded-[2rem] font-black text-lg hover:bg-white/10 transition-all border border-white/10 active:scale-95">
-            View Pro Pricing
+            Start Your Mock Test <ChevronRight className="group-hover:translate-x-1 transition-transform" />
           </button>
         </div>
 
@@ -649,38 +641,11 @@ const App: React.FC = () => {
           </div>
           <div className={cn(
             "px-6 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border shadow-xl",
-            currentUser?.subscription === SubscriptionStatus.PRO 
-              ? 'bg-green-500/10 text-green-400 border-green-500/30 shadow-green-500/10' 
-              : currentUser?.subscription === SubscriptionStatus.PENDING 
-              ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30 shadow-yellow-500/10'
-              : 'bg-slate-500/10 text-slate-400 border-slate-500/30 shadow-slate-500/5'
+            "bg-indigo-500/10 text-indigo-400 border-indigo-500/30 shadow-indigo-500/10"
           )}>
-            {currentUser?.subscription === SubscriptionStatus.PRO ? 'Pro Plan Active' : 
-             currentUser?.subscription === SubscriptionStatus.PENDING ? 'Verification Pending' : 
-             'Free Plan'}
+            {currentUser?.trialsUsed || 0}/3 Free Full Tests Used
           </div>
         </motion.div>
-
-        {currentUser?.subscription === SubscriptionStatus.FREE && (
-           <motion.div 
-             initial={{ opacity: 0, y: 20 }}
-             animate={{ opacity: 1, y: 0 }}
-             className="glass p-8 rounded-[2.5rem] bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border-indigo-500/20 flex flex-col md:flex-row justify-between items-center gap-8"
-           >
-              <div className="space-y-2 text-center md:text-left">
-                <h3 className="text-2xl font-black flex items-center justify-center md:justify-start gap-3">
-                  Upgrade to Pro <span className="text-[10px] py-1 px-3 bg-indigo-500 rounded-full text-white font-black italic tracking-widest">HOT</span>
-                </h3>
-                <p className="text-slate-400 font-medium">Unlock unlimited 100-question tests with timer for just ₹{appConfig.subscriptionPrice}/mo.</p>
-              </div>
-              <button 
-                onClick={() => setCurrentPage('payment')}
-                className="w-full md:w-auto px-10 py-4 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 whitespace-nowrap transition-all active:scale-95"
-              >
-                Go Pro Now
-              </button>
-           </motion.div>
-        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
           <div className="lg:col-span-2 space-y-8">
@@ -730,17 +695,15 @@ const App: React.FC = () => {
                   className="flex-1 py-5 glass hover:bg-white/10 rounded-2xl font-black text-slate-300 border border-white/10 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
                 >
                   {isLoading ? <Loader2 className="animate-spin" /> : <Zap size={20} />}
-                  {isLoading ? 'Generating...' : `5-Q Trial (${testLanguage})`}
+                  {isLoading ? 'Generating...' : `5-Q Quick Test`}
                 </button>
                 <button 
-                  disabled={isLoading || currentUser?.subscription !== SubscriptionStatus.PRO}
+                  disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && currentUser?.trialsUsed >= 3)}
                   onClick={() => startTest(topic, true, testLanguage)}
                   className="flex-1 py-5 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-white shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:bg-slate-800 disabled:text-slate-500 flex items-center justify-center gap-3"
                 >
                   {isLoading ? <Loader2 className="animate-spin" /> : <Trophy size={20} />}
-                  {currentUser?.subscription === SubscriptionStatus.PRO 
-                    ? (isLoading ? 'Generating...' : `Full 100-Q Test (${testLanguage})`) 
-                    : 'Full Test (Pro Only)'}
+                  {isLoading ? 'Generating...' : `Full 100-Q Test`}
                 </button>
               </div>
             </div>
@@ -795,7 +758,7 @@ const App: React.FC = () => {
                 {[
                   { label: 'Total Tests', val: testResults.length, icon: FileText, color: 'text-blue-400' },
                   { label: 'Avg Accuracy', val: `${(testResults.reduce((acc, r) => acc + r.percentage, 0) / (testResults.length || 1)).toFixed(0)}%`, icon: Target, color: 'text-emerald-400' },
-                  { label: 'Trial Left', val: currentUser?.trialsLeft || 0, icon: Zap, color: 'text-amber-400' }
+                  { label: 'Free Tests Left', val: Math.max(0, 3 - (currentUser?.trialsUsed || 0)), icon: Zap, color: 'text-amber-400' }
                 ].map((stat, i) => (
                   <div key={i} className="flex items-center gap-4">
                     <div className={cn("p-3 rounded-2xl bg-white/5", stat.color)}>
@@ -938,27 +901,10 @@ const App: React.FC = () => {
 
               <div className="flex justify-between items-center p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05]">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-400">
-                    <ShieldCheck size={18} />
-                  </div>
-                  <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">Subscription</span>
-                </div>
-                <span className={cn(
-                  "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border",
-                  currentUser.subscription === SubscriptionStatus.PRO ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' :
-                  currentUser.subscription === SubscriptionStatus.PENDING ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' :
-                  'bg-slate-500/20 text-slate-400 border-slate-500/30'
-                )}>
-                  {currentUser.subscription}
-                </span>
-              </div>
-
-              <div className="flex justify-between items-center p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05]">
-                <div className="flex items-center gap-3">
                   <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400">
                     <Zap size={18} />
                   </div>
-                  <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">Free Trials</span>
+                  <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">Free Tests Used</span>
                 </div>
                 <span className="font-bold text-slate-200">{currentUser.trialsUsed}/3</span>
               </div>
