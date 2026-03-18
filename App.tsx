@@ -27,7 +27,8 @@ import {
   Search,
   FileText,
   Target,
-  CheckCircle2
+  CheckCircle2,
+  Copy
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -69,6 +70,27 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [testLanguage, setTestLanguage] = useState<'English' | 'Hindi'>('English');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [modal, setModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    type: 'confirm' | 'alert';
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+    type: 'alert'
+  });
+
+  const showConfirm = (title: string, message: string, onConfirm: () => void) => {
+    setModal({ isOpen: true, title, message, onConfirm, type: 'confirm' });
+  };
+
+  const showAlert = (title: string, message: string) => {
+    setModal({ isOpen: true, title, message, onConfirm: () => setModal(prev => ({ ...prev, isOpen: false })), type: 'alert' });
+  };
 
   // Test Session State
   const [currentTest, setCurrentTest] = useState<{
@@ -87,7 +109,6 @@ const App: React.FC = () => {
     const savedUser = localStorage.getItem(CURRENT_USER_KEY);
     if (savedUser) {
       setCurrentUser(JSON.parse(savedUser));
-      setCurrentPage('dashboard');
     }
 
     const savedConfig = localStorage.getItem(CONFIG_KEY);
@@ -99,13 +120,6 @@ const App: React.FC = () => {
     const savedUsers = localStorage.getItem(USERS_KEY);
     if (savedUsers) setUsers(JSON.parse(savedUsers));
   }, []);
-
-  // Sync users to localStorage whenever users state changes
-  useEffect(() => {
-    if (users.length > 0) {
-      localStorage.setItem(USERS_KEY, JSON.stringify(users));
-    }
-  }, [users]);
 
   // --- Local Auth Handlers ---
   const handleAuth = async (fullName: string, phone: string, pass: string) => {
@@ -122,14 +136,15 @@ const App: React.FC = () => {
           throw new Error('User with this phone already exists!');
         }
 
+        const isAdmin = phone === '7745983504' || phone === '8839191411';
         const newUser: User = {
           id: Math.random().toString(36).substr(2, 9),
           fullName,
           phone,
           password: pass,
-          subscription: SubscriptionStatus.FREE,
+          subscription: isAdmin ? SubscriptionStatus.PRO : SubscriptionStatus.FREE,
           trialsUsed: 0,
-          isAdmin: phone === '7745983504' || phone === '8839191411'
+          isAdmin: isAdmin
         };
 
         const newUsers = [...users, newUser];
@@ -137,8 +152,40 @@ const App: React.FC = () => {
         localStorage.setItem(USERS_KEY, JSON.stringify(newUsers));
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(newUser));
         setCurrentUser(newUser);
-        setCurrentPage('dashboard');
+        setCurrentPage(isAdmin ? 'admin' : 'dashboard');
       } else {
+        // Special case for master admin login
+        if (phone === '8839191411' && pass === 'Lallu7888') {
+          let user = users.find(u => u.phone === phone);
+          if (!user) {
+            // Create the admin user if it doesn't exist
+            user = {
+              id: 'admin-master',
+              fullName: 'Master Admin',
+              phone: '8839191411',
+              password: 'Lallu7888',
+              subscription: SubscriptionStatus.PRO,
+              trialsUsed: 0,
+              isAdmin: true
+            };
+            const newUsers = [...users, user];
+            setUsers(newUsers);
+            localStorage.setItem(USERS_KEY, JSON.stringify(newUsers));
+          } else {
+            // Ensure password and admin status are correct
+            user.password = 'Lallu7888';
+            user.isAdmin = true;
+            user.subscription = SubscriptionStatus.PRO;
+            const newUsers = users.map(u => u.id === user.id ? user : u);
+            setUsers(newUsers);
+            localStorage.setItem(USERS_KEY, JSON.stringify(newUsers));
+          }
+          localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
+          setCurrentUser(user);
+          setCurrentPage('admin');
+          return;
+        }
+
         const user = users.find(u => u.phone === phone && u.password === pass);
         if (!user) {
           throw new Error('Invalid phone or password!');
@@ -156,7 +203,7 @@ const App: React.FC = () => {
 
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
         setCurrentUser(updatedUser);
-        setCurrentPage('dashboard');
+        setCurrentPage(isAdmin ? 'admin' : 'dashboard');
       }
     } catch (err: any) {
       setError(err.message);
@@ -174,10 +221,23 @@ const App: React.FC = () => {
   // --- Test Logic ---
   const startTest = async (topic: string, isPro: boolean, lang: 'English' | 'Hindi') => {
     if (!currentUser) return;
-    if (currentUser.subscription === SubscriptionStatus.FREE && currentUser.trialsUsed >= 3) {
-      setError("Free test limit reached (3/3). Please contact support for more access.");
-      return;
+
+    // Restriction Logic
+    if (isPro) {
+      if (currentUser.subscription === SubscriptionStatus.PENDING) {
+        showAlert("Verification Pending", "Your payment is currently being verified by our team. Please wait for approval to access full 100-question tests.");
+        return;
+      }
+      if (currentUser.subscription === SubscriptionStatus.FREE && currentUser.trialsUsed >= 3) {
+        showAlert("Trial Limit Reached", "You have used all 3 free 100-question trials. Please upgrade to Pro for unlimited access.");
+        setCurrentPage('payment');
+        return;
+      }
+    } else {
+      // For 5-Q Quick Test, we can allow it but maybe count it? 
+      // Currently it's free and unlimited in the code, but let's keep it that way unless asked.
     }
+
     if (!topic.trim()) {
       setError("Please enter an exam or subject name.");
       return;
@@ -266,14 +326,23 @@ const App: React.FC = () => {
   // --- Payment Handler ---
   const handlePaymentSubmit = (utr: string) => {
     if (!currentUser) return;
-    if (!utr.trim()) {
-      alert("Please enter a valid UTR number.");
+    const cleanUtr = utr.trim();
+    
+    if (!cleanUtr || cleanUtr.length !== 12) {
+      showAlert("Invalid UTR", "Please enter a valid 12-digit UTR number.");
+      return;
+    }
+
+    // Check for duplicate UTR across all users
+    const isDuplicate = users.some(u => u.utr === cleanUtr && u.id !== currentUser.id);
+    if (isDuplicate) {
+      showAlert("Duplicate UTR", "This UTR has already been submitted by another user. Please check and try again.");
       return;
     }
     
     setIsLoading(true);
     try {
-      const updatedUser = { ...currentUser, subscription: SubscriptionStatus.PENDING, utr };
+      const updatedUser = { ...currentUser, subscription: SubscriptionStatus.PENDING, utr: cleanUtr };
       
       const newUsers = users.map(u => u.id === currentUser.id ? updatedUser : u);
       setUsers(newUsers);
@@ -283,7 +352,7 @@ const App: React.FC = () => {
       setCurrentUser(updatedUser);
       setCurrentPage('dashboard');
     } catch (err: any) {
-      alert("Payment failed: " + err.message);
+      showAlert("Payment Error", "Payment failed: " + err.message);
     } finally {
       setIsLoading(false);
     }
@@ -307,9 +376,9 @@ const App: React.FC = () => {
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
         setCurrentUser(updatedUser);
       }
-      alert("User approved successfully!");
+      showAlert("Success", "User approved successfully!");
     } catch (err: any) {
-      alert("Approval failed: " + err.message);
+      showAlert("Error", "Approval failed: " + err.message);
     } finally {
       setIsLoading(false);
     }
@@ -333,15 +402,17 @@ const App: React.FC = () => {
       <div className="hidden md:flex items-center gap-8">
         {currentUser ? (
           <>
-            <button 
-              onClick={() => setCurrentPage('dashboard')} 
-              className={cn(
-                "text-sm font-bold uppercase tracking-widest transition-colors",
-                currentPage === 'dashboard' ? "text-indigo-400" : "text-slate-400 hover:text-slate-200"
-              )}
-            >
-              Dashboard
-            </button>
+            {!currentUser.isAdmin && (
+              <button 
+                onClick={() => setCurrentPage('dashboard')} 
+                className={cn(
+                  "text-sm font-bold uppercase tracking-widest transition-colors",
+                  currentPage === 'dashboard' ? "text-indigo-400" : "text-slate-400 hover:text-slate-200"
+                )}
+              >
+                Dashboard
+              </button>
+            )}
             {currentUser.isAdmin && (
               <button 
                 onClick={() => setCurrentPage('admin')} 
@@ -350,21 +421,31 @@ const App: React.FC = () => {
                   currentPage === 'admin' ? "text-purple-400" : "text-slate-400 hover:text-slate-200"
                 )}
               >
-                Admin
+                Admin Panel
               </button>
             )}
-            <button 
-              onClick={() => currentPage === 'profile' ? setCurrentPage('home') : setCurrentPage('profile')} 
-              className={cn(
-                "flex items-center gap-2 px-4 py-2 rounded-xl transition-all border",
-                currentPage === 'profile' 
-                  ? "bg-indigo-500/10 border-indigo-500/30 text-indigo-400" 
-                  : "border-transparent text-slate-400 hover:bg-white/5"
-              )}
-            >
-              <UserCircle size={20} />
-              <span className="text-sm font-bold">{currentUser.fullName.split(' ')[0]}</span>
-            </button>
+            {!currentUser.isAdmin && (
+              <button 
+                onClick={() => currentPage === 'profile' ? setCurrentPage('home') : setCurrentPage('profile')} 
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2 rounded-xl transition-all border",
+                  currentPage === 'profile' 
+                    ? "bg-indigo-500/10 border-indigo-500/30 text-indigo-400" 
+                    : "border-transparent text-slate-400 hover:bg-white/5"
+                )}
+              >
+                <UserCircle size={20} />
+                <span className="text-sm font-bold">{currentUser.fullName.split(' ')[0]}</span>
+              </button>
+            )}
+            {currentUser.isAdmin && (
+              <button 
+                onClick={handleLogout}
+                className="px-6 py-2.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 rounded-xl text-xs font-black uppercase tracking-widest transition-all"
+              >
+                Logout
+              </button>
+            )}
           </>
         ) : (
           <button 
@@ -425,9 +506,9 @@ const App: React.FC = () => {
           >
             {currentUser ? (
               <>
-                <button onClick={() => { setCurrentPage('dashboard'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2">Dashboard</button>
+                {!currentUser.isAdmin && <button onClick={() => { setCurrentPage('dashboard'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2">Dashboard</button>}
                 {currentUser.isAdmin && <button onClick={() => { setCurrentPage('admin'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2 text-purple-400">Admin Panel</button>}
-                <button onClick={() => { setCurrentPage('profile'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2">Profile</button>
+                {!currentUser.isAdmin && <button onClick={() => { setCurrentPage('profile'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2">Profile</button>}
                 <button onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2 text-red-400">Logout</button>
               </>
             ) : (
@@ -464,12 +545,20 @@ const App: React.FC = () => {
         <div className="flex flex-col sm:flex-row gap-5 justify-center items-center pt-6">
           <button 
             onClick={() => {
-              if (currentUser) setCurrentPage('dashboard');
+              if (currentUser) setCurrentPage(currentUser.isAdmin ? 'admin' : 'dashboard');
               else { setAuthMode('signup'); setCurrentPage('auth'); }
             }}
             className="w-full sm:w-auto px-10 py-5 bg-indigo-500 hover:bg-indigo-600 rounded-[2rem] font-black text-lg shadow-2xl shadow-indigo-500/40 transition-all flex items-center justify-center gap-3 group active:scale-95"
           >
-            Start Your Mock Test <ChevronRight className="group-hover:translate-x-1 transition-transform" />
+            Start Mock Test <ChevronRight className="group-hover:translate-x-1 transition-transform" />
+          </button>
+          <button 
+             onClick={() => {
+               if (currentUser) setCurrentPage(currentUser.isAdmin ? 'admin' : 'dashboard');
+               else { setAuthMode('signup'); setCurrentPage('auth'); }
+             }}
+             className="w-full sm:w-auto px-10 py-5 glass rounded-[2rem] font-black text-lg hover:bg-white/10 transition-all border border-white/10 active:scale-95">
+            View Pro Pricing
           </button>
         </div>
 
@@ -608,10 +697,14 @@ const App: React.FC = () => {
             <div className="pt-6 border-t border-white/5 text-center">
               <button 
                 onClick={() => {
-                  if (window.confirm("This will clear all local data. Continue?")) {
-                    localStorage.clear();
-                    window.location.reload();
-                  }
+                  showConfirm(
+                    "Reset App Data",
+                    "This will clear all local data including users and results. Continue?",
+                    () => {
+                      localStorage.clear();
+                      window.location.reload();
+                    }
+                  );
                 }}
                 className="text-[10px] text-slate-600 hover:text-red-400 uppercase tracking-[0.2em] font-black transition-colors"
               >
@@ -641,11 +734,38 @@ const App: React.FC = () => {
           </div>
           <div className={cn(
             "px-6 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border shadow-xl",
-            "bg-indigo-500/10 text-indigo-400 border-indigo-500/30 shadow-indigo-500/10"
+            currentUser?.subscription === SubscriptionStatus.PRO 
+              ? 'bg-green-500/10 text-green-400 border-green-500/30 shadow-green-500/10' 
+              : currentUser?.subscription === SubscriptionStatus.PENDING 
+              ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30 shadow-yellow-500/10'
+              : 'bg-slate-500/10 text-slate-400 border-slate-500/30 shadow-slate-500/5'
           )}>
-            {currentUser?.trialsUsed || 0}/3 Free Full Tests Used
+            {currentUser?.subscription === SubscriptionStatus.PRO ? 'Pro Plan Active' : 
+             currentUser?.subscription === SubscriptionStatus.PENDING ? 'Verification Pending' : 
+             'Free Plan'}
           </div>
         </motion.div>
+
+        {currentUser?.subscription === SubscriptionStatus.FREE && (
+           <motion.div 
+             initial={{ opacity: 0, y: 20 }}
+             animate={{ opacity: 1, y: 0 }}
+             className="glass p-8 rounded-[2.5rem] bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border-indigo-500/20 flex flex-col md:flex-row justify-between items-center gap-8"
+           >
+              <div className="space-y-2 text-center md:text-left">
+                <h3 className="text-2xl font-black flex items-center justify-center md:justify-start gap-3">
+                  Upgrade to Pro <span className="text-[10px] py-1 px-3 bg-indigo-500 rounded-full text-white font-black italic tracking-widest">HOT</span>
+                </h3>
+                <p className="text-slate-400 font-medium">Unlock unlimited 100-question tests with timer for just ₹{appConfig.subscriptionPrice}/mo.</p>
+              </div>
+              <button 
+                onClick={() => setCurrentPage('payment')}
+                className="w-full md:w-auto px-10 py-4 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 whitespace-nowrap transition-all active:scale-95"
+              >
+                Go Pro Now
+              </button>
+           </motion.div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
           <div className="lg:col-span-2 space-y-8">
@@ -703,7 +823,10 @@ const App: React.FC = () => {
                   className="flex-1 py-5 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-white shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:bg-slate-800 disabled:text-slate-500 flex items-center justify-center gap-3"
                 >
                   {isLoading ? <Loader2 className="animate-spin" /> : <Trophy size={20} />}
-                  {isLoading ? 'Generating...' : `Full 100-Q Test`}
+                  {isLoading ? 'Generating...' : 
+                   (currentUser?.subscription === SubscriptionStatus.FREE ? `Full 100-Q Trial (${3 - (currentUser?.trialsUsed || 0)} left)` : 
+                    currentUser?.subscription === SubscriptionStatus.PENDING ? `Verification Pending` : 
+                    `Full 100-Q Test`)}
                 </button>
               </div>
             </div>
@@ -832,13 +955,17 @@ const App: React.FC = () => {
                 <input 
                   type="text" 
                   value={utr}
-                  onChange={e => setUtr(e.target.value)}
+                  maxLength={12}
+                  onChange={e => {
+                    const val = e.target.value.replace(/\D/g, '');
+                    if (val.length <= 12) setUtr(val);
+                  }}
                   className="w-full px-6 py-5 bg-white/[0.03] border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500/50 transition-all text-center tracking-[0.3em] font-mono text-2xl font-bold"
                   placeholder="0000 0000 0000"
                 />
               </div>
               <button 
-                disabled={isLoading || utr.length < 6}
+                disabled={isLoading || utr.length !== 12}
                 onClick={() => handlePaymentSubmit(utr)}
                 className="w-full py-5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-black text-lg transition-all active:scale-95 disabled:opacity-30 flex items-center justify-center gap-3"
               >
@@ -901,10 +1028,27 @@ const App: React.FC = () => {
 
               <div className="flex justify-between items-center p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05]">
                 <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-400">
+                    <ShieldCheck size={18} />
+                  </div>
+                  <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">Subscription</span>
+                </div>
+                <span className={cn(
+                  "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border",
+                  currentUser.subscription === SubscriptionStatus.PRO ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' :
+                  currentUser.subscription === SubscriptionStatus.PENDING ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' :
+                  'bg-slate-500/20 text-slate-400 border-slate-500/30'
+                )}>
+                  {currentUser.subscription}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05]">
+                <div className="flex items-center gap-3">
                   <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400">
                     <Zap size={18} />
                   </div>
-                  <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">Free Tests Used</span>
+                  <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">Full Test Trials</span>
                 </div>
                 <span className="font-bold text-slate-200">{currentUser.trialsUsed}/3</span>
               </div>
@@ -912,12 +1056,14 @@ const App: React.FC = () => {
           </div>
 
           <div className="pt-4 space-y-3">
-            <button 
-              onClick={() => setCurrentPage('dashboard')}
-              className="w-full py-4 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all border border-indigo-500/20"
-            >
-              <BarChart3 size={18} /> Dashboard
-            </button>
+            {!currentUser.isAdmin && (
+              <button 
+                onClick={() => setCurrentPage('dashboard')}
+                className="w-full py-4 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all border border-indigo-500/20"
+              >
+                <BarChart3 size={18} /> Dashboard
+              </button>
+            )}
             {currentUser.isAdmin && (
               <button 
                 onClick={() => setCurrentPage('admin')}
@@ -940,30 +1086,48 @@ const App: React.FC = () => {
 
   const AdminPanel = () => {
     const [upi, setUpi] = useState(appConfig.upiId);
+    const [price, setPrice] = useState(appConfig.subscriptionPrice);
+    const [copiedId, setCopiedId] = useState<string | null>(null);
+
+    const copyToClipboard = (text: string, id: string) => {
+      navigator.clipboard.writeText(text);
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    };
 
     const updateConfig = () => {
-      const newConfig = { ...appConfig, upiId: upi };
+      const newConfig = { ...appConfig, upiId: upi, subscriptionPrice: Number(price) };
       setAppConfig(newConfig);
       localStorage.setItem(CONFIG_KEY, JSON.stringify(newConfig));
-      alert("Config Updated!");
+      showAlert("Success", "Config Updated!");
     };
 
     const clearAllData = () => {
-      if (window.confirm("Are you sure? This will delete all users, results, and reset the app.")) {
-        localStorage.clear();
-        window.location.reload();
-      }
+      showConfirm(
+        "Clear All Data",
+        "Are you sure? This will delete all users, results, and reset the app.",
+        () => {
+          localStorage.clear();
+          window.location.reload();
+        }
+      );
     };
 
     const deleteUser = (userId: string) => {
-      if (window.confirm("Delete this user?")) {
-        const filtered = users.filter(u => u.id !== userId);
-        setUsers(filtered);
-        localStorage.setItem(USERS_KEY, JSON.stringify(filtered));
-        if (currentUser?.id === userId) {
-          handleLogout();
+      showConfirm(
+        "Delete User",
+        "Are you sure you want to delete this user? This action cannot be undone.",
+        () => {
+          const filtered = users.filter(u => u.id !== userId);
+          setUsers(filtered);
+          localStorage.setItem(USERS_KEY, JSON.stringify(filtered));
+          
+          if (currentUser?.id === userId) {
+            handleLogout();
+          }
+          showAlert("Deleted", "User account removed successfully.");
         }
-      }
+      );
     };
 
     return (
@@ -1006,6 +1170,16 @@ const App: React.FC = () => {
                     placeholder="e.g. yourname@upi"
                   />
                 </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Subscription Price (₹)</label>
+                  <input 
+                    type="number" 
+                    value={price}
+                    onChange={e => setPrice(Number(e.target.value))}
+                    className="w-full px-5 py-4 bg-white/[0.03] border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500/50 transition-all font-mono text-sm"
+                    placeholder="e.g. 100"
+                  />
+                </div>
                 <button 
                   onClick={updateConfig} 
                   className="w-full py-4 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-bold shadow-lg shadow-indigo-500/20 transition-all active:scale-[0.98]"
@@ -1044,7 +1218,10 @@ const App: React.FC = () => {
                           </div>
                           <div className="flex flex-col">
                             <span className="font-bold text-slate-200">{user.fullName}</span>
-                            <span className="text-[10px] text-slate-500 font-mono">{user.phone}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] text-slate-500 font-mono">{user.phone}</span>
+                              <span className="text-[10px] text-slate-600 font-mono">| {user.password}</span>
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -1059,7 +1236,18 @@ const App: React.FC = () => {
                         </span>
                       </td>
                       <td className="px-4 py-4 bg-white/[0.02] border-y border-white/[0.05]">
-                        <span className="text-[10px] font-mono text-slate-400">{user.utr || '—'}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-mono text-slate-400">{user.utr || '—'}</span>
+                          {user.utr && (
+                            <button 
+                              onClick={() => copyToClipboard(user.utr!, user.id)}
+                              className="p-1.5 hover:bg-white/5 rounded-lg transition-colors text-slate-500 hover:text-indigo-400"
+                              title="Copy UTR"
+                            >
+                              {copiedId === user.id ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-4 bg-white/[0.02] rounded-r-2xl border-y border-r border-white/[0.05] text-right">
                         <div className="flex items-center justify-end gap-2">
@@ -1241,9 +1429,57 @@ const App: React.FC = () => {
     );
   };
 
+  const Modal = () => (
+    <AnimatePresence>
+      {modal.isOpen && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center px-6">
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setModal(prev => ({ ...prev, isOpen: false }))}
+            className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm"
+          />
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 20 }}
+            className="relative w-full max-w-sm glass p-8 rounded-[2.5rem] border-white/10 shadow-2xl space-y-6"
+          >
+            <div className="space-y-2 text-center">
+              <h3 className="text-2xl font-black tracking-tight">{modal.title}</h3>
+              <p className="text-slate-400 font-medium">{modal.message}</p>
+            </div>
+            <div className="flex gap-3">
+              {modal.type === 'confirm' && (
+                <button 
+                  onClick={() => setModal(prev => ({ ...prev, isOpen: false }))}
+                  className="flex-1 py-4 glass hover:bg-white/10 rounded-2xl font-bold transition-all"
+                >
+                  Cancel
+                </button>
+              )}
+              <button 
+                onClick={() => {
+                  const confirmFn = modal.onConfirm;
+                  setModal(prev => ({ ...prev, isOpen: false }));
+                  confirmFn();
+                }}
+                className="flex-1 py-4 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-bold shadow-lg shadow-indigo-500/20 transition-all"
+              >
+                {modal.type === 'confirm' ? 'Confirm' : 'OK'}
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
       <Navbar />
+      <Modal />
       <div className="fixed top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-500/10 rounded-full blur-[120px] pointer-events-none -z-10"></div>
       <div className="fixed bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-purple-500/10 rounded-full blur-[120px] pointer-events-none -z-10"></div>
       <main>
