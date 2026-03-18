@@ -132,6 +132,10 @@ const App: React.FC = () => {
           throw new Error('All fields are required!');
         }
 
+        if (phone.length !== 10) {
+          throw new Error('Phone number must be exactly 10 digits!');
+        }
+
         if (users.find(u => u.phone === phone)) {
           throw new Error('User with this phone already exists!');
         }
@@ -658,7 +662,11 @@ const App: React.FC = () => {
                 <input 
                   type="tel" 
                   value={phone}
-                  onChange={e => setPhone(e.target.value)}
+                  maxLength={10}
+                  onChange={e => {
+                    const val = e.target.value.replace(/\D/g, '');
+                    if (val.length <= 10) setPhone(val);
+                  }}
                   className="w-full px-6 py-4 bg-white/[0.03] border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500/50 transition-all font-bold"
                   placeholder="10-digit number"
                 />
