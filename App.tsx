@@ -109,6 +109,15 @@ const App: React.FC = () => {
   useEffect(() => {
     const initApp = async () => {
       setIsLoading(true);
+      
+      // Check if Supabase is configured
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+      if (!supabaseUrl || supabaseUrl === 'https://placeholder-url.supabase.co') {
+        setError('Supabase is not configured. Please add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your environment variables and redeploy.');
+        setIsLoading(false);
+        return;
+      }
+
       try {
         // 1. Load Config
         const { data: configData, error: configError } = await supabase
@@ -372,7 +381,8 @@ const App: React.FC = () => {
         setCurrentPage(isAdmin ? 'admin' : 'dashboard');
       }
     } catch (err: any) {
-      setError(err.message);
+      console.error('Auth Error:', err);
+      setError(err.message || 'Authentication failed. Please check your connection.');
     } finally {
       setIsLoading(false);
     }
@@ -420,7 +430,8 @@ const App: React.FC = () => {
       setTimeLeft(isPro ? 40 * 60 : 0);
       setCurrentPage('test');
     } catch (err: any) {
-      setError(err.message);
+      console.error('Test Generation Error:', err);
+      setError(err.message || 'Failed to generate test. Please try again.');
     } finally {
       setIsLoading(false);
     }
