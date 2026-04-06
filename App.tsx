@@ -23,7 +23,7 @@ import {
   Loader2,
   Menu,
   X,
-  Smartphone,
+  Mail,
   Search,
   FileText,
   Target,
@@ -40,6 +40,7 @@ import {
   AppConfig 
 } from './types';
 import { generateQuestions } from './services/geminiService';
+import { supabase } from './supabase';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -106,83 +107,208 @@ const App: React.FC = () => {
 
   // --- Auth & Persistence Initialization ---
   useEffect(() => {
-    const savedUser = localStorage.getItem(CURRENT_USER_KEY);
-    if (savedUser) {
-      setCurrentUser(JSON.parse(savedUser));
-    }
+    const initApp = async () => {
+      setIsLoading(true);
+      try {
+        // 1. Load Config
+        const { data: configData, error: configError } = await supabase
+          .from('config')
+          .select('*')
+          .single();
+        
+        if (configData) {
+          setAppConfig({
+            upiId: configData.upi_id,
+            subscriptionPrice: configData.subscription_price
+          });
+        } else if (configError && configError.code === 'PGRST116') {
+          // No config found, create default
+          await supabase.from('config').insert([{
+            upi_id: DEFAULT_CONFIG.upiId,
+            subscription_price: DEFAULT_CONFIG.subscriptionPrice
+          }]);
+        }
 
-    const savedConfig = localStorage.getItem(CONFIG_KEY);
-    if (savedConfig) setAppConfig(JSON.parse(savedConfig));
+        // 2. Load Users
+        const { data: usersData } = await supabase
+          .from('users')
+          .select('*');
+        
+        if (usersData) {
+          const formattedUsers: User[] = usersData.map(u => ({
+            id: u.id,
+            fullName: u.full_name,
+            email: u.email || u.phone, // Fallback for transition
+            password: u.password,
+            subscription: u.subscription as SubscriptionStatus,
+            trialsUsed: u.trials_used,
+            isAdmin: u.is_admin,
+            utr: u.utr
+          }));
+          setUsers(formattedUsers);
+        }
 
-    const savedResults = localStorage.getItem(RESULTS_KEY);
-    if (savedResults) setTestResults(JSON.parse(savedResults));
+        // 3. Load Current User from LocalStorage (Session)
+        const savedUser = localStorage.getItem(CURRENT_USER_KEY);
+        if (savedUser) {
+          const parsedUser = JSON.parse(savedUser);
+          // Verify user still exists and get latest data
+          const { data: latestUser } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', parsedUser.id)
+            .single();
+          
+          if (latestUser) {
+            const formattedUser: User = {
+              id: latestUser.id,
+              fullName: latestUser.full_name,
+              email: latestUser.email || latestUser.phone,
+              password: latestUser.password,
+              subscription: latestUser.subscription as SubscriptionStatus,
+              trialsUsed: latestUser.trials_used,
+              isAdmin: latestUser.is_admin,
+              utr: latestUser.utr
+            };
+            setCurrentUser(formattedUser);
+            localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
 
-    const savedUsers = localStorage.getItem(USERS_KEY);
-    if (savedUsers) setUsers(JSON.parse(savedUsers));
+            // Load results for this user
+            const { data: resultsData } = await supabase
+              .from('results')
+              .select('*')
+              .eq('user_id', formattedUser.id)
+              .order('date', { ascending: false });
+            
+            if (resultsData) {
+              setTestResults(resultsData.map(r => ({
+                id: r.id,
+                userId: r.user_id,
+                examName: r.exam_name,
+                score: r.score,
+                total: r.total,
+                correct: r.correct,
+                wrong: r.wrong,
+                percentage: r.percentage,
+                date: r.date,
+                questions: JSON.parse(r.questions),
+                userAnswers: JSON.parse(r.user_answers)
+              })));
+            }
+          } else {
+            localStorage.removeItem(CURRENT_USER_KEY);
+          }
+        }
+      } catch (err) {
+        console.error('Error initializing app:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    initApp();
   }, []);
 
   // --- Local Auth Handlers ---
-  const handleAuth = async (fullName: string, phone: string, pass: string) => {
+  const handleAuth = async (fullName: string, email: string, pass: string) => {
     setError(null);
     setIsLoading(true);
 
     try {
       if (authMode === 'signup') {
-        if (!fullName.trim() || !phone.trim() || !pass.trim()) {
+        if (!fullName.trim() || !email.trim() || !pass.trim()) {
           throw new Error('All fields are required!');
         }
 
-        if (phone.length !== 10) {
-          throw new Error('Phone number must be exactly 10 digits!');
+        if (!email.includes('@')) {
+          throw new Error('Please enter a valid email address!');
         }
 
-        if (users.find(u => u.phone === phone)) {
-          throw new Error('User with this phone already exists!');
+        const { data: existingUser } = await supabase
+          .from('users')
+          .select('id')
+          .eq('email', email)
+          .maybeSingle();
+
+        if (existingUser) {
+          throw new Error('User with this email already exists!');
         }
 
-        const isAdmin = phone === '7745983504' || phone === '8839191411';
+        const isAdmin = email === 'lallusinghnetam0@gmail.com' || email === '8839191411@gmail.com';
         const newUser: User = {
           id: Math.random().toString(36).substr(2, 9),
           fullName,
-          phone,
+          email,
           password: pass,
           subscription: isAdmin ? SubscriptionStatus.PRO : SubscriptionStatus.FREE,
           trialsUsed: 0,
           isAdmin: isAdmin
         };
 
-        const newUsers = [...users, newUser];
-        setUsers(newUsers);
-        localStorage.setItem(USERS_KEY, JSON.stringify(newUsers));
+        const { error: insertError } = await supabase
+          .from('users')
+          .insert([{
+            id: newUser.id,
+            full_name: newUser.fullName,
+            email: newUser.email,
+            password: newUser.password,
+            subscription: newUser.subscription,
+            trials_used: newUser.trialsUsed,
+            is_admin: newUser.isAdmin
+          }]);
+
+        if (insertError) throw insertError;
+
+        setUsers(prev => [...prev, newUser]);
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(newUser));
         setCurrentUser(newUser);
         setCurrentPage(isAdmin ? 'admin' : 'dashboard');
       } else {
         // Special case for master admin login
-        if (phone === '8839191411' && pass === 'Lallu7888') {
-          let user = users.find(u => u.phone === phone);
-          if (!user) {
-            // Create the admin user if it doesn't exist
+        if (email === 'lallusinghnetam0@gmail.com' && pass === 'Lallu7888') {
+          const { data: adminData } = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', email)
+            .maybeSingle();
+
+          let user: User;
+          if (!adminData) {
             user = {
               id: 'admin-master',
               fullName: 'Master Admin',
-              phone: '8839191411',
+              email: 'lallusinghnetam0@gmail.com',
               password: 'Lallu7888',
               subscription: SubscriptionStatus.PRO,
               trialsUsed: 0,
               isAdmin: true
             };
-            const newUsers = [...users, user];
-            setUsers(newUsers);
-            localStorage.setItem(USERS_KEY, JSON.stringify(newUsers));
+            await supabase.from('users').insert([{
+              id: user.id,
+              full_name: user.fullName,
+              email: user.email,
+              password: user.password,
+              subscription: user.subscription,
+              trials_used: user.trialsUsed,
+              is_admin: user.isAdmin
+            }]);
+            setUsers(prev => [...prev, user]);
           } else {
-            // Ensure password and admin status are correct
-            user.password = 'Lallu7888';
-            user.isAdmin = true;
-            user.subscription = SubscriptionStatus.PRO;
-            const newUsers = users.map(u => u.id === user.id ? user : u);
-            setUsers(newUsers);
-            localStorage.setItem(USERS_KEY, JSON.stringify(newUsers));
+            user = {
+              id: adminData.id,
+              fullName: adminData.full_name,
+              email: adminData.email || adminData.phone,
+              password: adminData.password,
+              subscription: SubscriptionStatus.PRO,
+              trialsUsed: adminData.trials_used,
+              isAdmin: true
+            };
+            await supabase
+              .from('users')
+              .update({ is_admin: true, subscription: SubscriptionStatus.PRO })
+              .eq('id', user.id);
+            
+            setUsers(prev => prev.map(u => u.id === user.id ? user : u));
           }
           localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
           setCurrentUser(user);
@@ -190,23 +316,59 @@ const App: React.FC = () => {
           return;
         }
 
-        const user = users.find(u => u.phone === phone && u.password === pass);
-        if (!user) {
-          throw new Error('Invalid phone or password!');
+        const { data: userData } = await supabase
+          .from('users')
+          .select('*')
+          .eq('email', email)
+          .eq('password', pass)
+          .maybeSingle();
+
+        if (!userData) {
+          throw new Error('Invalid email or password!');
         }
 
-        // Ensure admin status is up to date
-        const isAdmin = phone === '7745983504' || phone === '8839191411';
-        const updatedUser = { ...user, isAdmin };
-        
-        if (user.isAdmin !== isAdmin) {
-          const newUsers = users.map(u => u.id === user.id ? updatedUser : u);
-          setUsers(newUsers);
-          localStorage.setItem(USERS_KEY, JSON.stringify(newUsers));
+        const isAdmin = email === 'lallusinghnetam0@gmail.com' || email === '8839191411@gmail.com';
+        const updatedUser: User = {
+          id: userData.id,
+          fullName: userData.full_name,
+          email: userData.email || userData.phone,
+          password: userData.password,
+          subscription: userData.subscription as SubscriptionStatus,
+          trialsUsed: userData.trials_used,
+          isAdmin: isAdmin,
+          utr: userData.utr
+        };
+
+        if (isAdmin && !userData.is_admin) {
+          await supabase.from('users').update({ is_admin: true }).eq('id', updatedUser.id);
         }
 
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
         setCurrentUser(updatedUser);
+        
+        // Load results for this user
+        const { data: resultsData } = await supabase
+          .from('results')
+          .select('*')
+          .eq('user_id', updatedUser.id)
+          .order('date', { ascending: false });
+        
+        if (resultsData) {
+          setTestResults(resultsData.map(r => ({
+            id: r.id,
+            userId: r.user_id,
+            examName: r.exam_name,
+            score: r.score,
+            total: r.total,
+            correct: r.correct,
+            wrong: r.wrong,
+            percentage: r.percentage,
+            date: r.date,
+            questions: JSON.parse(r.questions),
+            userAnswers: JSON.parse(r.user_answers)
+          })));
+        }
+
         setCurrentPage(isAdmin ? 'admin' : 'dashboard');
       }
     } catch (err: any) {
@@ -287,26 +449,47 @@ const App: React.FC = () => {
       userAnswers: userAnswers
     };
 
-    const newResults = [result, ...testResults];
-    setTestResults(newResults);
-    localStorage.setItem(RESULTS_KEY, JSON.stringify(newResults));
+    try {
+      // Save result to Supabase
+      await supabase.from('results').insert([{
+        id: result.id,
+        user_id: result.userId,
+        exam_name: result.examName,
+        score: result.score,
+        total: result.total,
+        correct: result.correct,
+        wrong: result.wrong,
+        percentage: result.percentage,
+        date: result.date,
+        questions: JSON.stringify(result.questions),
+        user_answers: JSON.stringify(result.userAnswers)
+      }]);
 
-    // Update trial status if free
-    if (currentUser.subscription === SubscriptionStatus.FREE) {
-      const updatedTrials = currentUser.trialsUsed + 1;
-      const updatedUser = { ...currentUser, trialsUsed: updatedTrials };
-      
-      const newUsers = users.map(u => u.id === currentUser.id ? updatedUser : u);
-      setUsers(newUsers);
-      localStorage.setItem(USERS_KEY, JSON.stringify(newUsers));
+      const newResults = [result, ...testResults];
+      setTestResults(newResults);
 
-      localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
-      setCurrentUser(updatedUser);
+      // Update trial status if free
+      if (currentUser.subscription === SubscriptionStatus.FREE) {
+        const updatedTrials = currentUser.trialsUsed + 1;
+        const updatedUser = { ...currentUser, trialsUsed: updatedTrials };
+        
+        await supabase
+          .from('users')
+          .update({ trials_used: updatedTrials })
+          .eq('id', currentUser.id);
+
+        setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
+        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
+        setCurrentUser(updatedUser);
+      }
+
+      setLastResult(result);
+      setCurrentPage('result');
+      setCurrentTest(null);
+    } catch (err) {
+      console.error('Error saving test result:', err);
+      showAlert('Error', 'Failed to save test result. Please check your connection.');
     }
-
-    setLastResult(result);
-    setCurrentPage('result');
-    setCurrentTest(null);
   }, [currentTest, currentUser, userAnswers, testResults, users]);
 
   // Timer Effect
@@ -328,7 +511,7 @@ const App: React.FC = () => {
   }, [currentPage, currentTest, timeLeft, submitTest]);
 
   // --- Payment Handler ---
-  const handlePaymentSubmit = (utr: string) => {
+  const handlePaymentSubmit = async (utr: string) => {
     if (!currentUser) return;
     const cleanUtr = utr.trim();
     
@@ -338,8 +521,14 @@ const App: React.FC = () => {
     }
 
     // Check for duplicate UTR across all users
-    const isDuplicate = users.some(u => u.utr === cleanUtr && u.id !== currentUser.id);
-    if (isDuplicate) {
+    const { data: duplicateUtr } = await supabase
+      .from('users')
+      .select('id')
+      .eq('utr', cleanUtr)
+      .neq('id', currentUser.id)
+      .maybeSingle();
+
+    if (duplicateUtr) {
       showAlert("Duplicate UTR", "This UTR has already been submitted by another user. Please check and try again.");
       return;
     }
@@ -348,10 +537,14 @@ const App: React.FC = () => {
     try {
       const updatedUser = { ...currentUser, subscription: SubscriptionStatus.PENDING, utr: cleanUtr };
       
-      const newUsers = users.map(u => u.id === currentUser.id ? updatedUser : u);
-      setUsers(newUsers);
-      localStorage.setItem(USERS_KEY, JSON.stringify(newUsers));
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ subscription: SubscriptionStatus.PENDING, utr: cleanUtr })
+        .eq('id', currentUser.id);
 
+      if (updateError) throw updateError;
+
+      setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
       localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
       setCurrentUser(updatedUser);
       setCurrentPage('dashboard');
@@ -363,9 +556,16 @@ const App: React.FC = () => {
   };
 
   // --- Admin Handlers ---
-  const approvePayment = (userId: string) => {
+  const approvePayment = async (userId: string) => {
     setIsLoading(true);
     try {
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ subscription: SubscriptionStatus.PRO, utr: null })
+        .eq('id', userId);
+
+      if (updateError) throw updateError;
+
       const newUsers = users.map(u => {
         if (u.id === userId) {
           return { ...u, subscription: SubscriptionStatus.PRO, utr: undefined };
@@ -373,7 +573,6 @@ const App: React.FC = () => {
         return u;
       });
       setUsers(newUsers);
-      localStorage.setItem(USERS_KEY, JSON.stringify(newUsers));
       
       if (currentUser?.id === userId) {
         const updatedUser = { ...currentUser, subscription: SubscriptionStatus.PRO, utr: undefined };
@@ -614,7 +813,7 @@ const App: React.FC = () => {
 
   const Auth = () => {
     const [fullName, setFullName] = useState('');
-    const [phone, setPhone] = useState('');
+    const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     
     return (
@@ -658,17 +857,13 @@ const App: React.FC = () => {
                 </div>
               )}
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Phone Number</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Email Address</label>
                 <input 
-                  type="tel" 
-                  value={phone}
-                  maxLength={10}
-                  onChange={e => {
-                    const val = e.target.value.replace(/\D/g, '');
-                    if (val.length <= 10) setPhone(val);
-                  }}
+                  type="email" 
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
                   className="w-full px-6 py-4 bg-white/[0.03] border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500/50 transition-all font-bold"
-                  placeholder="10-digit number"
+                  placeholder="Enter your email"
                 />
               </div>
               <div className="space-y-2">
@@ -685,7 +880,7 @@ const App: React.FC = () => {
 
             <button 
               disabled={isLoading}
-              onClick={() => handleAuth(fullName, phone, password)}
+              onClick={() => handleAuth(fullName, email, password)}
               className="w-full py-5 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 transition-all flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-50"
             >
               {isLoading ? <Loader2 className="animate-spin" /> : (authMode === 'login' ? 'Login Now' : 'Create Account')}
@@ -708,9 +903,18 @@ const App: React.FC = () => {
                   showConfirm(
                     "Reset App Data",
                     "This will clear all local data including users and results. Continue?",
-                    () => {
-                      localStorage.clear();
-                      window.location.reload();
+                    async () => {
+                      setIsLoading(true);
+                      try {
+                        await supabase.from('results').delete().neq('id', '0');
+                        await supabase.from('users').delete().neq('id', '0');
+                        localStorage.clear();
+                        window.location.reload();
+                      } catch (err: any) {
+                        showAlert("Error", "Failed to reset data: " + err.message);
+                      } finally {
+                        setIsLoading(false);
+                      }
                     }
                   );
                 }}
@@ -1027,11 +1231,11 @@ const App: React.FC = () => {
               <div className="flex justify-between items-center p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05]">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-slate-500/10 rounded-lg text-slate-400">
-                    <Smartphone size={18} />
+                    <Mail size={18} />
                   </div>
-                  <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">Phone Number</span>
+                  <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">Email Address</span>
                 </div>
-                <span className="font-bold text-slate-200">{currentUser.phone}</span>
+                <span className="font-bold text-slate-200">{currentUser.email}</span>
               </div>
 
               <div className="flex justify-between items-center p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05]">
@@ -1103,20 +1307,41 @@ const App: React.FC = () => {
       setTimeout(() => setCopiedId(null), 2000);
     };
 
-    const updateConfig = () => {
-      const newConfig = { ...appConfig, upiId: upi, subscriptionPrice: Number(price) };
-      setAppConfig(newConfig);
-      localStorage.setItem(CONFIG_KEY, JSON.stringify(newConfig));
-      showAlert("Success", "Config Updated!");
+    const updateConfig = async () => {
+      setIsLoading(true);
+      try {
+        const { error: configError } = await supabase
+          .from('config')
+          .update({ upi_id: upi, subscription_price: Number(price) })
+          .eq('id', 1); // Assuming single config row with id 1
+
+        if (configError) throw configError;
+
+        setAppConfig({ upiId: upi, subscriptionPrice: Number(price) });
+        showAlert("Success", "Config Updated!");
+      } catch (err: any) {
+        showAlert("Error", "Failed to update config: " + err.message);
+      } finally {
+        setIsLoading(false);
+      }
     };
 
     const clearAllData = () => {
       showConfirm(
         "Clear All Data",
         "Are you sure? This will delete all users, results, and reset the app.",
-        () => {
-          localStorage.clear();
-          window.location.reload();
+        async () => {
+          setIsLoading(true);
+          try {
+            await supabase.from('results').delete().neq('id', '0');
+            await supabase.from('users').delete().neq('id', '0');
+            localStorage.clear();
+            window.location.reload();
+          } catch (err: any) {
+            showAlert("Error", "Failed to clear data: " + err.message);
+          } finally {
+            setIsLoading(false);
+          }
         }
       );
     };
@@ -1125,15 +1350,23 @@ const App: React.FC = () => {
       showConfirm(
         "Delete User",
         "Are you sure you want to delete this user? This action cannot be undone.",
-        () => {
-          const filtered = users.filter(u => u.id !== userId);
-          setUsers(filtered);
-          localStorage.setItem(USERS_KEY, JSON.stringify(filtered));
-          
-          if (currentUser?.id === userId) {
-            handleLogout();
+        async () => {
+          setIsLoading(true);
+          try {
+            await supabase.from('results').delete().eq('user_id', userId);
+            await supabase.from('users').delete().eq('id', userId);
+
+            setUsers(prev => prev.filter(u => u.id !== userId));
+            
+            if (currentUser?.id === userId) {
+              handleLogout();
+            }
+            showAlert("Deleted", "User account removed successfully.");
+          } catch (err: any) {
+            showAlert("Error", "Failed to delete user: " + err.message);
+          } finally {
+            setIsLoading(false);
           }
-          showAlert("Deleted", "User account removed successfully.");
         }
       );
     };
@@ -1227,7 +1460,7 @@ const App: React.FC = () => {
                           <div className="flex flex-col">
                             <span className="font-bold text-slate-200">{user.fullName}</span>
                             <div className="flex items-center gap-2">
-                              <span className="text-[10px] text-slate-500 font-mono">{user.phone}</span>
+                              <span className="text-[10px] text-slate-500 font-mono">{user.email}</span>
                               <span className="text-[10px] text-slate-600 font-mono">| {user.password}</span>
                             </div>
                           </div>

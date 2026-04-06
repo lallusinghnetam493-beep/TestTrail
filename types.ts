@@ -8,8 +8,7 @@ export enum SubscriptionStatus {
 export interface User {
   id: string;
   fullName: string;
-  email?: string;
-  phone: string;
+  email: string;
   password?: string;
   subscription: SubscriptionStatus;
   trialsUsed: number;
