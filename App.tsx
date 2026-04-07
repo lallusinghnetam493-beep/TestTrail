@@ -72,6 +72,7 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('Please wait...');
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [testLanguage, setTestLanguage] = useState<'English' | 'Hindi'>('English');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [modal, setModal] = useState<{
@@ -220,11 +221,61 @@ const App: React.FC = () => {
     };
 
     initApp();
+
+    // 4. Handle Auth State Changes & Email Confirmation Redirects
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_IN' && session) {
+        // Check if this was a signup confirmation
+        const hash = window.location.hash;
+        if (hash.includes('type=signup') || hash.includes('type=recovery')) {
+          // If it was a signup confirmation, we might want to show login or just go to dashboard
+          // The user specifically asked for login page
+          setCurrentPage('auth');
+          setAuthMode('login');
+          setSuccessMessage(hash.includes('type=signup') ? 'Email confirmed! Please login to continue.' : 'Password reset link verified! Please set your new password.');
+          // Clear hash to prevent re-triggering
+          window.history.replaceState(null, '', window.location.pathname);
+          return;
+        }
+
+        // Normal sign in
+        const { data: latestUser } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        
+        if (latestUser) {
+          const formattedUser: User = {
+            id: latestUser.id,
+            fullName: latestUser.full_name,
+            email: latestUser.email || latestUser.phone,
+            password: latestUser.password,
+            subscription: latestUser.subscription as SubscriptionStatus,
+            trialsUsed: latestUser.trials_used,
+            isAdmin: latestUser.is_admin,
+            utr: latestUser.utr
+          };
+          setCurrentUser(formattedUser);
+          localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
+          setCurrentPage('dashboard');
+        }
+      } else if (event === 'SIGNED_OUT') {
+        setCurrentUser(null);
+        localStorage.removeItem(CURRENT_USER_KEY);
+        setCurrentPage('home');
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   // --- Local Auth Handlers ---
   const handleAuth = async (fullName: string, email: string, pass: string, confirmPass?: string) => {
     setError(null);
+    setSuccessMessage(null);
     setLoadingMessage(authMode === 'login' ? 'Logging in...' : 'Creating Account...');
     setIsLoading(true);
 
@@ -361,6 +412,7 @@ const App: React.FC = () => {
 
   const handleResetPassword = async (email: string, newPass: string, confirmPass: string) => {
     setError(null);
+    setSuccessMessage(null);
     setLoadingMessage('Resetting Password...');
     setIsLoading(true);
     const cleanEmail = email.trim().toLowerCase();
@@ -416,8 +468,8 @@ const App: React.FC = () => {
         showAlert("Verification Pending", "Your payment is currently being verified by our team. Please wait for approval to access full 100-question tests.");
         return;
       }
-      if (currentUser.subscription === SubscriptionStatus.FREE && currentUser.trialsUsed >= 3) {
-        showAlert("Trial Limit Reached", "You have used all 3 free 100-question trials. Please upgrade to Pro for unlimited access.");
+      if (currentUser.subscription === SubscriptionStatus.FREE && currentUser.trialsUsed >= 1) {
+        showAlert("Trial Limit Reached", "You have used your 1 free 100-question trial. Please upgrade to Pro for unlimited access.");
         setCurrentPage('payment');
         return;
       }
@@ -440,7 +492,7 @@ const App: React.FC = () => {
       setCurrentTest({ topic, questions, isPro, language: lang });
       setUserAnswers(new Array(questions.length).fill(-1));
       setActiveQuestionIndex(0);
-      setTimeLeft(isPro ? 40 * 60 : 0);
+      setTimeLeft(isPro ? 50 * 60 : 0);
       setCurrentPage('test');
     } catch (err: any) {
       console.error('Test Generation Error:', err);
@@ -869,6 +921,16 @@ const App: React.FC = () => {
                 <AlertCircle size={16} /> {error}
               </motion.div>
             )}
+
+            {successMessage && (
+              <motion.div 
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="p-4 bg-green-500/10 border border-green-500/20 text-green-400 text-xs font-bold rounded-2xl flex items-center gap-3"
+              >
+                <CheckCircle2 size={16} /> {successMessage}
+              </motion.div>
+            )}
             
             <div className="space-y-5">
               {authMode === 'signup' && (
@@ -1109,13 +1171,13 @@ const App: React.FC = () => {
                   {isLoading ? 'Generating...' : `5-Q Quick Test`}
                 </button>
                 <button 
-                  disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && currentUser?.trialsUsed >= 3)}
+                  disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && currentUser?.trialsUsed >= 1)}
                   onClick={() => startTest(topic, true, testLanguage)}
                   className="flex-1 py-5 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-white shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:bg-slate-800 disabled:text-slate-500 flex items-center justify-center gap-3"
                 >
                   {isLoading ? <Loader2 className="animate-spin" /> : <Trophy size={20} />}
                   {isLoading ? 'Generating...' : 
-                   (currentUser?.subscription === SubscriptionStatus.FREE ? `Full 100-Q Trial (${3 - (currentUser?.trialsUsed || 0)} left)` : 
+                   (currentUser?.subscription === SubscriptionStatus.FREE ? `Full 100-Q Trial (${1 - (currentUser?.trialsUsed || 0)} left)` : 
                     currentUser?.subscription === SubscriptionStatus.PENDING ? `Verification Pending` : 
                     `Full 100-Q Test`)}
                 </button>
@@ -1172,7 +1234,7 @@ const App: React.FC = () => {
                 {[
                   { label: 'Total Tests', val: testResults.length, icon: FileText, color: 'text-blue-400' },
                   { label: 'Avg Accuracy', val: `${(testResults.reduce((acc, r) => acc + r.percentage, 0) / (testResults.length || 1)).toFixed(0)}%`, icon: Target, color: 'text-emerald-400' },
-                  { label: 'Free Tests Left', val: Math.max(0, 3 - (currentUser?.trialsUsed || 0)), icon: Zap, color: 'text-amber-400' }
+                  { label: 'Free Tests Left', val: Math.max(0, 1 - (currentUser?.trialsUsed || 0)), icon: Zap, color: 'text-amber-400' }
                 ].map((stat, i) => (
                   <div key={i} className="flex items-center gap-4">
                     <div className={cn("p-3 rounded-2xl bg-white/5", stat.color)}>
