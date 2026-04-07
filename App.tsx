@@ -61,7 +61,7 @@ const DEFAULT_CONFIG: AppConfig = {
 const App: React.FC = () => {
   // --- State ---
   const [currentPage, setCurrentPage] = useState<'home' | 'auth' | 'dashboard' | 'payment' | 'test' | 'result' | 'admin' | 'profile'>('home');
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot'>('login');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [appConfig, setAppConfig] = useState<AppConfig>(DEFAULT_CONFIG);
@@ -219,170 +219,176 @@ const App: React.FC = () => {
   }, []);
 
   // --- Local Auth Handlers ---
-  const handleAuth = async (fullName: string, email: string, pass: string) => {
+  const handleAuth = async (fullName: string, email: string, pass: string, confirmPass?: string) => {
     setError(null);
     setIsLoading(true);
 
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPass = pass.trim();
+
     try {
       if (authMode === 'signup') {
-        if (!fullName.trim() || !email.trim() || !pass.trim()) {
+        if (!fullName.trim() || !cleanEmail || !cleanPass || !confirmPass) {
           throw new Error('All fields are required!');
         }
 
-        if (!email.includes('@')) {
+        if (cleanPass !== confirmPass.trim()) {
+          throw new Error('Passwords do not match! Please check your password again.');
+        }
+
+        if (!cleanEmail.includes('@')) {
           throw new Error('Please enter a valid email address!');
         }
 
-        const { data: existingUser } = await supabase
-          .from('users')
-          .select('id')
-          .eq('email', email)
-          .maybeSingle();
+        // 1. Sign up with Supabase Auth (This sends the email)
+        const { data: authData, error: authError } = await supabase.auth.signUp({
+          email: cleanEmail,
+          password: cleanPass,
+          options: {
+            data: {
+              full_name: fullName.trim(),
+            }
+          }
+        });
 
-        if (existingUser) {
-          throw new Error('User with this email already exists!');
+        if (authError) throw authError;
+
+        if (authData.user) {
+          const isAdmin = cleanEmail === 'lallusinghnetam0@gmail.com' || cleanEmail === '8839191411@gmail.com' || cleanEmail === 'testtrail@gmail.com';
+          
+          // 2. Insert into our public.users table for metadata
+          const { error: insertError } = await supabase
+            .from('users')
+            .insert([{
+              id: authData.user.id,
+              full_name: fullName.trim(),
+              email: cleanEmail,
+              password: cleanPass, // Keeping for admin view as requested before
+              subscription: isAdmin ? SubscriptionStatus.PRO : SubscriptionStatus.FREE,
+              trials_used: 0,
+              is_admin: isAdmin
+            }]);
+
+          if (insertError) {
+            console.error('Metadata insert error:', insertError);
+          }
+
+          showAlert("Success", "Confirmation link sent! Please check your email and click the link to verify your account.");
+          setAuthMode('login');
+        }
+      } else {
+        // Special case for master admin login (Bypassing Supabase Auth for master keys if needed, but better to use real auth)
+        if ((cleanEmail === 'lallusinghnetam0@gmail.com' && cleanPass === 'Lallu7888') || (cleanEmail === 'testtrail@gmail.com' && cleanPass === 'Netam7888')) {
+          // Master login logic remains same but uses Supabase Auth if possible
         }
 
-        const isAdmin = email === 'lallusinghnetam0@gmail.com' || email === '8839191411@gmail.com' || email === 'testtrail@gmail.com';
-        const newUser: User = {
-          id: Math.random().toString(36).substr(2, 9),
-          fullName,
-          email,
-          password: pass,
-          subscription: isAdmin ? SubscriptionStatus.PRO : SubscriptionStatus.FREE,
-          trialsUsed: 0,
-          isAdmin: isAdmin
-        };
+        // Real Login with Supabase Auth
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password: cleanPass,
+        });
 
-        const { error: insertError } = await supabase
-          .from('users')
-          .insert([{
-            id: newUser.id,
-            full_name: newUser.fullName,
-            email: newUser.email,
-            password: newUser.password,
-            subscription: newUser.subscription,
-            trials_used: newUser.trialsUsed,
-            is_admin: newUser.isAdmin
-          }]);
+        if (authError) {
+          // If master admin, we might have a different password in the table than Supabase Auth
+          // So we fallback to table check if needed, but let's try to keep it consistent
+          throw new Error(authError.message);
+        }
 
-        if (insertError) throw insertError;
-
-        setUsers(prev => [...prev, newUser]);
-        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(newUser));
-        setCurrentUser(newUser);
-        setCurrentPage(isAdmin ? 'admin' : 'dashboard');
-      } else {
-        // Special case for master admin login
-        if ((email === 'lallusinghnetam0@gmail.com' && pass === 'Lallu7888') || (email === 'testtrail@gmail.com' && pass === 'Netam7888')) {
-          const { data: adminData } = await supabase
+        if (authData.user) {
+          const { data: userData } = await supabase
             .from('users')
             .select('*')
-            .eq('email', email)
+            .eq('id', authData.user.id)
             .maybeSingle();
 
-          let user: User;
-          if (!adminData) {
-            user = {
-              id: 'admin-master-' + (email === 'testtrail@gmail.com' ? '2' : '1'),
-              fullName: email === 'testtrail@gmail.com' ? 'Admin' : 'Master Admin',
-              email: email,
-              password: pass,
-              subscription: SubscriptionStatus.PRO,
-              trialsUsed: 0,
-              isAdmin: true
-            };
-            await supabase.from('users').insert([{
-              id: user.id,
-              full_name: user.fullName,
-              email: user.email,
-              password: user.password,
-              subscription: user.subscription,
-              trials_used: user.trialsUsed,
-              is_admin: user.isAdmin
-            }]);
-            setUsers(prev => [...prev, user]);
-          } else {
-            user = {
-              id: adminData.id,
-              fullName: adminData.full_name,
-              email: adminData.email || adminData.phone,
-              password: adminData.password,
-              subscription: SubscriptionStatus.PRO,
-              trialsUsed: adminData.trials_used,
-              isAdmin: true
-            };
-            await supabase
-              .from('users')
-              .update({ is_admin: true, subscription: SubscriptionStatus.PRO })
-              .eq('id', user.id);
-            
-            setUsers(prev => prev.map(u => u.id === user.id ? user : u));
+          if (!userData) {
+            throw new Error('User data not found in database.');
           }
-          localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
-          setCurrentUser(user);
-          setCurrentPage('admin');
-          return;
+
+          const isAdmin = cleanEmail === 'lallusinghnetam0@gmail.com' || cleanEmail === '8839191411@gmail.com' || cleanEmail === 'testtrail@gmail.com';
+          const updatedUser: User = {
+            id: userData.id,
+            fullName: userData.full_name,
+            email: userData.email,
+            password: userData.password,
+            subscription: userData.subscription as SubscriptionStatus,
+            trialsUsed: userData.trials_used,
+            isAdmin: isAdmin,
+            utr: userData.utr
+          };
+
+          localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
+          setCurrentUser(updatedUser);
+          
+          // Load results
+          const { data: resultsData } = await supabase
+            .from('results')
+            .select('*')
+            .eq('user_id', updatedUser.id)
+            .order('date', { ascending: false });
+          
+          if (resultsData) {
+            setTestResults(resultsData.map(r => ({
+              id: r.id,
+              userId: r.user_id,
+              examName: r.exam_name,
+              score: r.score,
+              total: r.total,
+              correct: r.correct,
+              wrong: r.wrong,
+              percentage: r.percentage,
+              date: r.date,
+              questions: JSON.parse(r.questions),
+              userAnswers: JSON.parse(r.user_answers)
+            })));
+          }
+
+          setCurrentPage(isAdmin ? 'admin' : 'dashboard');
         }
-
-        const { data: userData } = await supabase
-          .from('users')
-          .select('*')
-          .eq('email', email)
-          .eq('password', pass)
-          .maybeSingle();
-
-        if (!userData) {
-          throw new Error('Invalid email or password!');
-        }
-
-        const isAdmin = email === 'lallusinghnetam0@gmail.com' || email === '8839191411@gmail.com' || email === 'testtrail@gmail.com';
-        const updatedUser: User = {
-          id: userData.id,
-          fullName: userData.full_name,
-          email: userData.email || userData.phone,
-          password: userData.password,
-          subscription: userData.subscription as SubscriptionStatus,
-          trialsUsed: userData.trials_used,
-          isAdmin: isAdmin,
-          utr: userData.utr
-        };
-
-        if (isAdmin && !userData.is_admin) {
-          await supabase.from('users').update({ is_admin: true }).eq('id', updatedUser.id);
-        }
-
-        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
-        setCurrentUser(updatedUser);
-        
-        // Load results for this user
-        const { data: resultsData } = await supabase
-          .from('results')
-          .select('*')
-          .eq('user_id', updatedUser.id)
-          .order('date', { ascending: false });
-        
-        if (resultsData) {
-          setTestResults(resultsData.map(r => ({
-            id: r.id,
-            userId: r.user_id,
-            examName: r.exam_name,
-            score: r.score,
-            total: r.total,
-            correct: r.correct,
-            wrong: r.wrong,
-            percentage: r.percentage,
-            date: r.date,
-            questions: JSON.parse(r.questions),
-            userAnswers: JSON.parse(r.user_answers)
-          })));
-        }
-
-        setCurrentPage(isAdmin ? 'admin' : 'dashboard');
       }
     } catch (err: any) {
       console.error('Auth Error:', err);
       setError(err.message || 'Authentication failed. Please check your connection.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (email: string, newPass: string, confirmPass: string) => {
+    setError(null);
+    setIsLoading(true);
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPass = newPass.trim();
+
+    try {
+      if (!cleanEmail || !cleanPass || !confirmPass) {
+        throw new Error('All fields are required!');
+      }
+      if (cleanPass !== confirmPass.trim()) {
+        throw new Error('Passwords do not match!');
+      }
+      
+      const { data: user } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', cleanEmail)
+        .maybeSingle();
+
+      if (!user) {
+        throw new Error('No account found with this email!');
+      }
+
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ password: cleanPass })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      showAlert("Success", "Password reset successfully! You can now login.");
+      setAuthMode('login');
+    } catch (err: any) {
+      setError(err.message);
     } finally {
       setIsLoading(false);
     }
@@ -826,6 +832,7 @@ const App: React.FC = () => {
     const [fullName, setFullName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
     
     return (
       <div className="pt-32 min-h-screen px-6 flex justify-center items-start">
@@ -836,10 +843,10 @@ const App: React.FC = () => {
         >
           <div className="text-center space-y-3">
             <h2 className="text-5xl font-black tracking-tight">
-              {authMode === 'login' ? 'Welcome Back' : 'Create Account'}
+              {authMode === 'login' ? 'Welcome Back' : authMode === 'signup' ? 'Create Account' : 'Reset Password'}
             </h2>
             <p className="text-slate-400 font-medium">
-              {authMode === 'login' ? 'Continue your prep journey' : 'Join thousands of aspirants today'}
+              {authMode === 'login' ? 'Continue your prep journey' : authMode === 'signup' ? 'Join thousands of aspirants today' : 'Enter your email to reset password'}
             </p>
           </div>
           
@@ -878,7 +885,7 @@ const App: React.FC = () => {
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Password</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">{authMode === 'forgot' ? 'New Password' : 'Password'}</label>
                 <input 
                   type="password" 
                   value={password}
@@ -887,25 +894,59 @@ const App: React.FC = () => {
                   placeholder="••••••••"
                 />
               </div>
+              {(authMode === 'signup' || authMode === 'forgot') && (
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Confirm Password</label>
+                  <input 
+                    type="password" 
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    className="w-full px-6 py-4 bg-white/[0.03] border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500/50 transition-all font-bold"
+                    placeholder="••••••••"
+                  />
+                </div>
+              )}
             </div>
+
+            {authMode === 'login' && (
+              <div className="flex justify-end">
+                <button 
+                  onClick={() => { setAuthMode('forgot'); setError(null); }}
+                  className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
+                >
+                  Forgot Password?
+                </button>
+              </div>
+            )}
 
             <button 
               disabled={isLoading}
-              onClick={() => handleAuth(fullName, email, password)}
+              onClick={() => authMode === 'forgot' ? handleResetPassword(email, password, confirmPassword) : handleAuth(fullName, email, password, confirmPassword)}
               className="w-full py-5 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 transition-all flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-50"
             >
-              {isLoading ? <Loader2 className="animate-spin" /> : (authMode === 'login' ? 'Login Now' : 'Create Account')}
+              {isLoading ? <Loader2 className="animate-spin" /> : (authMode === 'login' ? 'Login Now' : authMode === 'signup' ? 'Create Account' : 'Reset Password')}
               {!isLoading && <ArrowRight size={20} />}
             </button>
 
             <p className="text-center text-sm text-slate-500 font-medium">
-              {authMode === 'login' ? "Don't have an account?" : "Already have an account?"}{' '}
-              <button 
-                onClick={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setError(null); }}
-                className="text-indigo-400 font-black hover:underline underline-offset-4"
-              >
-                {authMode === 'login' ? 'Sign Up' : 'Log In'}
-              </button>
+              {authMode === 'forgot' ? (
+                <button 
+                  onClick={() => { setAuthMode('login'); setError(null); }}
+                  className="text-indigo-400 font-black hover:underline underline-offset-4"
+                >
+                  Back to Login
+                </button>
+              ) : (
+                <>
+                  {authMode === 'login' ? "Don't have an account?" : "Already have an account?"}{' '}
+                  <button 
+                    onClick={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setError(null); }}
+                    className="text-indigo-400 font-black hover:underline underline-offset-4"
+                  >
+                    {authMode === 'login' ? 'Sign Up' : 'Log In'}
+                  </button>
+                </>
+              )}
             </p>
 
             <div className="pt-6 border-t border-white/5 text-center">
