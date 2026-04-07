@@ -243,7 +243,7 @@ const App: React.FC = () => {
           throw new Error('User with this email already exists!');
         }
 
-        const isAdmin = email === 'lallusinghnetam0@gmail.com' || email === '8839191411@gmail.com';
+        const isAdmin = email === 'lallusinghnetam0@gmail.com' || email === '8839191411@gmail.com' || email === 'testtrail@gmail.com';
         const newUser: User = {
           id: Math.random().toString(36).substr(2, 9),
           fullName,
@@ -274,7 +274,7 @@ const App: React.FC = () => {
         setCurrentPage(isAdmin ? 'admin' : 'dashboard');
       } else {
         // Special case for master admin login
-        if (email === 'lallusinghnetam0@gmail.com' && pass === 'Lallu7888') {
+        if ((email === 'lallusinghnetam0@gmail.com' && pass === 'Lallu7888') || (email === 'testtrail@gmail.com' && pass === 'Netam7888')) {
           const { data: adminData } = await supabase
             .from('users')
             .select('*')
@@ -284,10 +284,10 @@ const App: React.FC = () => {
           let user: User;
           if (!adminData) {
             user = {
-              id: 'admin-master',
-              fullName: 'Master Admin',
-              email: 'lallusinghnetam0@gmail.com',
-              password: 'Lallu7888',
+              id: 'admin-master-' + (email === 'testtrail@gmail.com' ? '2' : '1'),
+              fullName: email === 'testtrail@gmail.com' ? 'Admin' : 'Master Admin',
+              email: email,
+              password: pass,
               subscription: SubscriptionStatus.PRO,
               trialsUsed: 0,
               isAdmin: true
@@ -336,7 +336,7 @@ const App: React.FC = () => {
           throw new Error('Invalid email or password!');
         }
 
-        const isAdmin = email === 'lallusinghnetam0@gmail.com' || email === '8839191411@gmail.com';
+        const isAdmin = email === 'lallusinghnetam0@gmail.com' || email === '8839191411@gmail.com' || email === 'testtrail@gmail.com';
         const updatedUser: User = {
           id: userData.id,
           fullName: userData.full_name,
