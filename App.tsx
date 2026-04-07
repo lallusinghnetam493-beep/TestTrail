@@ -343,8 +343,27 @@ const App: React.FC = () => {
             console.error('Metadata insert error:', insertError);
           }
 
-          showAlert("Success", "Confirmation link sent! Please check your email and click the link to verify your account.");
-          setAuthMode('login');
+          if (authData.session) {
+            // Direct login if Supabase allows it (Confirm Email is OFF)
+            const formattedUser: User = {
+              id: authData.user.id,
+              fullName: fullName.trim(),
+              email: cleanEmail,
+              password: cleanPass,
+              subscription: isAdmin ? SubscriptionStatus.PRO : SubscriptionStatus.FREE,
+              trialsUsed: 0,
+              isAdmin: isAdmin,
+              utr: ''
+            };
+            setCurrentUser(formattedUser);
+            localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
+            setCurrentPage('dashboard');
+            showAlert("Success", "Account created successfully!");
+          } else {
+            // If session is null, email confirmation is likely ON in Supabase
+            showAlert("Success", "Account created! You can now login. (Note: If you receive a confirmation email, please disable 'Confirm email' in your Supabase Dashboard -> Authentication -> Settings to allow direct login).");
+            setAuthMode('login');
+          }
         }
       } else {
         // Special case for master admin login (Bypassing Supabase Auth for master keys if needed, but better to use real auth)
