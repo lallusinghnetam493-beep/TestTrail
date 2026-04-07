@@ -1037,33 +1037,6 @@ const App: React.FC = () => {
                 </>
               )}
             </p>
-
-            <div className="pt-6 border-t border-white/5 text-center">
-              <button 
-                onClick={() => {
-                  showConfirm(
-                    "Reset App Data",
-                    "This will clear all local data including users and results. Continue?",
-                    async () => {
-                      setIsLoading(true);
-                      try {
-                        await supabase.from('results').delete().neq('id', '0');
-                        await supabase.from('users').delete().neq('id', '0');
-                        localStorage.clear();
-                        window.location.reload();
-                      } catch (err: any) {
-                        showAlert("Error", "Failed to reset data: " + err.message);
-                      } finally {
-                        setIsLoading(false);
-                      }
-                    }
-                  );
-                }}
-                className="text-[10px] text-slate-600 hover:text-red-400 uppercase tracking-[0.2em] font-black transition-colors"
-              >
-                Reset App Data
-              </button>
-            </div>
           </div>
         </motion.div>
       </div>
