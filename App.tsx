@@ -143,26 +143,7 @@ const App: React.FC = () => {
           }]);
         }
 
-        // 2. Load Users
-        const { data: usersData } = await supabase
-          .from('users')
-          .select('*');
-        
-        if (usersData) {
-          const formattedUsers: User[] = usersData.map(u => ({
-            id: u.id,
-            fullName: u.full_name,
-            email: u.email || u.phone, // Fallback for transition
-            password: u.password,
-            subscription: u.subscription as SubscriptionStatus,
-            trialsUsed: u.trials_used,
-            isAdmin: u.is_admin,
-            utr: u.utr
-          }));
-          setUsers(formattedUsers);
-        }
-
-        // 3. Load Current User from LocalStorage (Session)
+        // 2. Load Current User from LocalStorage (Session)
         const savedUser = localStorage.getItem(CURRENT_USER_KEY);
         if (savedUser) {
           const parsedUser = JSON.parse(savedUser);
@@ -215,6 +196,7 @@ const App: React.FC = () => {
         }
       } catch (err) {
         console.error('Error initializing app:', err);
+        setError('Failed to initialize app. Please check your connection.');
       } finally {
         setIsLoading(false);
       }
@@ -222,7 +204,12 @@ const App: React.FC = () => {
 
     initApp();
 
-    // 4. Handle Auth State Changes & Email Confirmation Redirects
+    // Safety timeout to ensure loading screen doesn't stay forever
+    const timer = setTimeout(() => {
+      setIsLoading(false);
+    }, 10000); // 10 seconds max loading
+
+    // 3. Handle Auth State Changes & Email Confirmation Redirects
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (event === 'SIGNED_IN' && session) {
         // Check if this was a signup confirmation
@@ -269,8 +256,35 @@ const App: React.FC = () => {
 
     return () => {
       subscription.unsubscribe();
+      clearTimeout(timer);
     };
   }, []);
+
+  // --- Admin User Loading ---
+  useEffect(() => {
+    if (currentPage === 'admin' && currentUser?.isAdmin) {
+      const loadAllUsers = async () => {
+        const { data: usersData } = await supabase
+          .from('users')
+          .select('*');
+        
+        if (usersData) {
+          const formattedUsers: User[] = usersData.map(u => ({
+            id: u.id,
+            fullName: u.full_name,
+            email: u.email || u.phone,
+            password: u.password,
+            subscription: u.subscription as SubscriptionStatus,
+            trialsUsed: u.trials_used,
+            isAdmin: u.is_admin,
+            utr: u.utr
+          }));
+          setUsers(formattedUsers);
+        }
+      };
+      loadAllUsers();
+    }
+  }, [currentPage, currentUser]);
 
   // --- Local Auth Handlers ---
   const handleAuth = async (fullName: string, email: string, pass: string, confirmPass?: string) => {
@@ -1850,8 +1864,19 @@ const App: React.FC = () => {
       {isLoading && (
         <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center space-y-4">
           <div className="w-16 h-16 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
-          <div className="text-center">
+          <div className="text-center px-6">
             <p className="font-bold text-lg">{loadingMessage}</p>
+            {error && (
+              <p className="text-red-400 text-sm mt-4 max-w-xs mx-auto">{error}</p>
+            )}
+            {error && (
+              <button 
+                onClick={() => window.location.reload()}
+                className="mt-6 px-6 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold transition-all"
+              >
+                Retry
+              </button>
+            )}
           </div>
         </div>
       )}
