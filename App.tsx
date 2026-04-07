@@ -68,6 +68,7 @@ const App: React.FC = () => {
   const [testResults, setTestResults] = useState<TestResult[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState('Please wait...');
   const [error, setError] = useState<string | null>(null);
   const [testLanguage, setTestLanguage] = useState<'English' | 'Hindi'>('English');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -108,6 +109,7 @@ const App: React.FC = () => {
   // --- Auth & Persistence Initialization ---
   useEffect(() => {
     const initApp = async () => {
+      setLoadingMessage('Loading App...');
       setIsLoading(true);
       
       // Check if Supabase is configured
@@ -221,6 +223,7 @@ const App: React.FC = () => {
   // --- Local Auth Handlers ---
   const handleAuth = async (fullName: string, email: string, pass: string, confirmPass?: string) => {
     setError(null);
+    setLoadingMessage(authMode === 'login' ? 'Logging in...' : 'Creating Account...');
     setIsLoading(true);
 
     const cleanEmail = email.trim().toLowerCase();
@@ -356,6 +359,7 @@ const App: React.FC = () => {
 
   const handleResetPassword = async (email: string, newPass: string, confirmPass: string) => {
     setError(null);
+    setLoadingMessage('Resetting Password...');
     setIsLoading(true);
     const cleanEmail = email.trim().toLowerCase();
     const cleanPass = newPass.trim();
@@ -425,6 +429,7 @@ const App: React.FC = () => {
       return;
     }
 
+    setLoadingMessage('Starting your test...');
     setIsLoading(true);
     setError(null);
     try {
@@ -1789,7 +1794,7 @@ const App: React.FC = () => {
         <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center space-y-4">
           <div className="w-16 h-16 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
           <div className="text-center">
-            <p className="font-bold text-lg">Starting your test...</p>
+            <p className="font-bold text-lg">{loadingMessage}</p>
           </div>
         </div>
       )}
