@@ -225,12 +225,13 @@ const App: React.FC = () => {
           return;
         }
 
-        // Normal sign in - with timeout to prevent hanging
+        // Normal sign in - with timeout to prevent hanging and fallback to session data
         try {
-          const { data: latestUser, error: userError } = await Promise.race([
-            supabase.from('users').select('*').eq('id', session.user.id).single(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Fetch timeout')), 8000))
-          ]) as any;
+          const fetchPromise = supabase.from('users').select('*').eq('id', session.user.id).single();
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Fetch timeout')), 15000));
+          
+          const result = await Promise.race([fetchPromise, timeoutPromise]) as any;
+          const latestUser = result.data;
           
           if (latestUser) {
             const formattedUser: User = {
@@ -246,12 +247,26 @@ const App: React.FC = () => {
             setCurrentUser(formattedUser);
             localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
             
-            // Redirect based on admin status
             const isAdmin = formattedUser.email === 'lallusinghnetam0@gmail.com' || formattedUser.email === '8839191411@gmail.com' || formattedUser.email === 'testtrail@gmail.com';
             setCurrentPage(isAdmin ? 'admin' : 'dashboard');
+          } else {
+            throw new Error('User not found in database');
           }
         } catch (err) {
-          console.error('Error fetching user on auth change:', err);
+          console.error('Error fetching user on auth change, using session fallback:', err);
+          // Fallback to session user data if DB fetch fails
+          const isAdmin = session.user.email === 'lallusinghnetam0@gmail.com' || session.user.email === '8839191411@gmail.com' || session.user.email === 'testtrail@gmail.com';
+          const fallbackUser: User = {
+            id: session.user.id,
+            fullName: session.user.user_metadata?.full_name || 'User',
+            email: session.user.email || '',
+            subscription: isAdmin ? SubscriptionStatus.PRO : SubscriptionStatus.FREE,
+            trialsUsed: 0,
+            isAdmin: isAdmin
+          };
+          setCurrentUser(fallbackUser);
+          localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(fallbackUser));
+          setCurrentPage(isAdmin ? 'admin' : 'dashboard');
         }
       } else if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
@@ -384,10 +399,9 @@ const App: React.FC = () => {
           }
         }
       } else {
-        // Special case for master admin login (Bypassing Supabase Auth for master keys if needed, but better to use real auth)
-        if ((cleanEmail === 'lallusinghnetam0@gmail.com' && cleanPass === 'Lallu7888') || (cleanEmail === 'testtrail@gmail.com' && cleanPass === 'Netam7888')) {
-          // Master login logic remains same but uses Supabase Auth if possible
-        }
+        // Special case for master admin login (Bypassing Supabase Auth for master keys if needed)
+        const isMasterAdmin = (cleanEmail === 'lallusinghnetam0@gmail.com' && cleanPass === 'Lallu7888') || 
+                             (cleanEmail === 'testtrail@gmail.com' && cleanPass === 'Netam7888');
 
         // Real Login with Supabase Auth
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -396,9 +410,65 @@ const App: React.FC = () => {
         });
 
         if (authError) {
-          // If master admin, we might have a different password in the table than Supabase Auth
-          // So we fallback to table check if needed, but let's try to keep it consistent
-          throw new Error(authError.message);
+          // Fallback for master admin if Supabase Auth fails (e.g. email not confirmed or user not in Auth yet)
+          if (isMasterAdmin) {
+            const { data: userData, error: fetchError } = await supabase
+              .from('users')
+              .select('*')
+              .eq('email', cleanEmail)
+              .maybeSingle();
+            
+            if (userData && userData.password === cleanPass) {
+              const updatedUser: User = {
+                id: userData.id,
+                fullName: userData.full_name,
+                email: userData.email,
+                password: userData.password,
+                subscription: userData.subscription as SubscriptionStatus,
+                trialsUsed: userData.trials_used,
+                isAdmin: true,
+                utr: userData.utr
+              };
+
+              localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
+              setCurrentUser(updatedUser);
+              
+              // Load results
+              const { data: resultsData } = await supabase
+                .from('results')
+                .select('*')
+                .eq('user_id', updatedUser.id)
+                .order('date', { ascending: false });
+              
+              if (resultsData) {
+                setTestResults(resultsData.map(r => ({
+                  id: r.id,
+                  userId: r.user_id,
+                  examName: r.exam_name,
+                  score: r.score,
+                  total: r.total,
+                  correct: r.correct,
+                  wrong: r.wrong,
+                  percentage: r.percentage,
+                  date: r.date,
+                  questions: JSON.parse(r.questions),
+                  userAnswers: JSON.parse(r.user_answers)
+                })));
+              }
+
+              setCurrentPage('admin');
+              return;
+            }
+          }
+          
+          let errorMessage = authError.message;
+          if (errorMessage === 'Invalid login credentials') {
+            errorMessage = 'Invalid email or password. Please check your credentials and try again.';
+          } else if (errorMessage.includes('Email not confirmed')) {
+            errorMessage = 'Please confirm your email address before logging in. Check your inbox for a confirmation link.';
+          }
+          
+          throw new Error(errorMessage);
         }
 
         if (authData.user) {
