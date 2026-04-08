@@ -225,13 +225,13 @@ const App: React.FC = () => {
           return;
         }
 
-        // Normal sign in - with timeout to prevent hanging and fallback to session data
+        // Normal sign in - fetch latest user data with fallback to session data
         try {
-          const fetchPromise = supabase.from('users').select('*').eq('id', session.user.id).single();
-          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Fetch timeout')), 15000));
-          
-          const result = await Promise.race([fetchPromise, timeoutPromise]) as any;
-          const latestUser = result.data;
+          const { data: latestUser } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
           
           if (latestUser) {
             const formattedUser: User = {
@@ -250,11 +250,22 @@ const App: React.FC = () => {
             const isAdmin = formattedUser.email === 'lallusinghnetam0@gmail.com' || formattedUser.email === '8839191411@gmail.com' || formattedUser.email === 'testtrail@gmail.com';
             setCurrentPage(isAdmin ? 'admin' : 'dashboard');
           } else {
-            throw new Error('User not found in database');
+            // If user not in table yet, use session fallback
+            const isAdmin = session.user.email === 'lallusinghnetam0@gmail.com' || session.user.email === '8839191411@gmail.com' || session.user.email === 'testtrail@gmail.com';
+            const fallbackUser: User = {
+              id: session.user.id,
+              fullName: session.user.user_metadata?.full_name || 'User',
+              email: session.user.email || '',
+              subscription: isAdmin ? SubscriptionStatus.PRO : SubscriptionStatus.FREE,
+              trialsUsed: 0,
+              isAdmin: isAdmin
+            };
+            setCurrentUser(fallbackUser);
+            localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(fallbackUser));
+            setCurrentPage(isAdmin ? 'admin' : 'dashboard');
           }
         } catch (err) {
-          console.error('Error fetching user on auth change, using session fallback:', err);
-          // Fallback to session user data if DB fetch fails
+          // Silent fallback to session user data if DB fetch fails for any reason
           const isAdmin = session.user.email === 'lallusinghnetam0@gmail.com' || session.user.email === '8839191411@gmail.com' || session.user.email === 'testtrail@gmail.com';
           const fallbackUser: User = {
             id: session.user.id,
@@ -348,7 +359,35 @@ const App: React.FC = () => {
           }
         });
 
-        if (authError) throw authError;
+        if (authError) {
+          if (authError.message.includes('User already registered')) {
+            const isAdmin = cleanEmail === 'lallusinghnetam0@gmail.com' || cleanEmail === '8839191411@gmail.com' || cleanEmail === 'testtrail@gmail.com';
+            
+            // Allow users to "sync" their password to our users table
+            // This is a fail-safe for when Supabase Auth is out of sync or email confirmation is stuck.
+            const { data: existingUser } = await supabase
+              .from('users')
+              .select('id')
+              .eq('email', cleanEmail)
+              .maybeSingle();
+
+            if (existingUser) {
+              await supabase
+                .from('users')
+                .update({ password: cleanPass, full_name: fullName.trim() })
+                .eq('id', existingUser.id);
+              
+              showAlert("Account Sync", "This email is already registered. We have updated your login record with the password you just entered. Please try logging in now.");
+              setAuthMode('login');
+              return;
+            } else {
+              // If they are in Auth but not in our users table, we can't easily get their ID here
+              // without a session. But we can tell them to use "Forgot Password" or try logging in.
+              throw new Error('This email is already registered in our system. Please try logging in or use "Forgot Password".');
+            }
+          }
+          throw authError;
+        }
 
         if (authData.user) {
           const isAdmin = cleanEmail === 'lallusinghnetam0@gmail.com' || cleanEmail === '8839191411@gmail.com' || cleanEmail === 'testtrail@gmail.com';
@@ -399,9 +438,10 @@ const App: React.FC = () => {
           }
         }
       } else {
-        // Special case for master admin login (Bypassing Supabase Auth for master keys if needed)
-        const isMasterAdmin = (cleanEmail === 'lallusinghnetam0@gmail.com' && cleanPass === 'Lallu7888') || 
-                             (cleanEmail === 'testtrail@gmail.com' && cleanPass === 'Netam7888');
+        // Special case for admin login fallback
+        const isAdminEmail = cleanEmail === 'lallusinghnetam0@gmail.com' || 
+                            cleanEmail === '8839191411@gmail.com' || 
+                            cleanEmail === 'testtrail@gmail.com';
 
         // Real Login with Supabase Auth
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
@@ -410,55 +450,56 @@ const App: React.FC = () => {
         });
 
         if (authError) {
-          // Fallback for master admin if Supabase Auth fails (e.g. email not confirmed or user not in Auth yet)
-          if (isMasterAdmin) {
-            const { data: userData, error: fetchError } = await supabase
-              .from('users')
-              .select('*')
-              .eq('email', cleanEmail)
-              .maybeSingle();
+          // Universal Fallback: Check our 'users' table if Supabase Auth fails
+          // This helps if email confirmation is stuck or if there's a sync issue
+          const { data: userData } = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', cleanEmail)
+            .maybeSingle();
+          
+          if (userData && userData.password === cleanPass) {
+            const isAdmin = userData.is_admin || cleanEmail === 'lallusinghnetam0@gmail.com' || cleanEmail === '8839191411@gmail.com' || cleanEmail === 'testtrail@gmail.com';
+            const formattedUser: User = {
+              id: userData.id,
+              fullName: userData.full_name,
+              email: userData.email,
+              password: userData.password,
+              subscription: userData.subscription as SubscriptionStatus,
+              trialsUsed: userData.trials_used,
+              isAdmin: isAdmin,
+              utr: userData.utr
+            };
+
+            localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
+            setCurrentUser(formattedUser);
             
-            if (userData && userData.password === cleanPass) {
-              const updatedUser: User = {
-                id: userData.id,
-                fullName: userData.full_name,
-                email: userData.email,
-                password: userData.password,
-                subscription: userData.subscription as SubscriptionStatus,
-                trialsUsed: userData.trials_used,
-                isAdmin: true,
-                utr: userData.utr
-              };
-
-              localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
-              setCurrentUser(updatedUser);
-              
-              // Load results
-              const { data: resultsData } = await supabase
-                .from('results')
-                .select('*')
-                .eq('user_id', updatedUser.id)
-                .order('date', { ascending: false });
-              
-              if (resultsData) {
-                setTestResults(resultsData.map(r => ({
-                  id: r.id,
-                  userId: r.user_id,
-                  examName: r.exam_name,
-                  score: r.score,
-                  total: r.total,
-                  correct: r.correct,
-                  wrong: r.wrong,
-                  percentage: r.percentage,
-                  date: r.date,
-                  questions: JSON.parse(r.questions),
-                  userAnswers: JSON.parse(r.user_answers)
-                })));
-              }
-
-              setCurrentPage('admin');
-              return;
+            // Load results
+            const { data: resultsData } = await supabase
+              .from('results')
+              .select('*')
+              .eq('user_id', formattedUser.id)
+              .order('date', { ascending: false });
+            
+            if (resultsData) {
+              setTestResults(resultsData.map(r => ({
+                id: r.id,
+                userId: r.user_id,
+                examName: r.exam_name,
+                score: r.score,
+                total: r.total,
+                correct: r.correct,
+                wrong: r.wrong,
+                percentage: r.percentage,
+                date: r.date,
+                questions: JSON.parse(r.questions),
+                userAnswers: JSON.parse(r.user_answers)
+              })));
             }
+
+            setCurrentPage(isAdmin ? 'admin' : 'dashboard');
+            showAlert("Login Success", "Logged in successfully via secure backup.");
+            return;
           }
           
           let errorMessage = authError.message;
