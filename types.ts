@@ -16,6 +16,7 @@ export interface User {
   trialsUsed: number;
   utr?: string;
   isAdmin?: boolean;
+  sessionId?: string;
 }
 
 export interface Question {

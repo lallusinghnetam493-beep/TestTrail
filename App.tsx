@@ -175,8 +175,17 @@ const App: React.FC = () => {
               subscription: latestUser.subscription as SubscriptionStatus,
               trialsUsed: latestUser.trials_used,
               isAdmin: latestUser.is_admin,
-              utr: latestUser.utr
+              utr: latestUser.utr,
+              sessionId: latestUser.session_id
             };
+
+            // Single Device Check
+            if (parsedUser.sessionId && latestUser.session_id && parsedUser.sessionId !== latestUser.session_id) {
+              showAlert("Logged Out", "You have been logged in on another device. Please login again.");
+              handleLogout();
+              return;
+            }
+
             setCurrentUser(formattedUser);
             localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
 
@@ -254,7 +263,8 @@ const App: React.FC = () => {
               subscription: latestUser.subscription as SubscriptionStatus,
               trialsUsed: latestUser.trials_used,
               isAdmin: latestUser.is_admin,
-              utr: latestUser.utr
+              utr: latestUser.utr,
+              sessionId: latestUser.session_id
             };
             setCurrentUser(formattedUser);
             localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
@@ -303,6 +313,27 @@ const App: React.FC = () => {
       clearTimeout(timer);
     };
   }, []);
+
+  // --- Single Device Session Check ---
+  useEffect(() => {
+    if (!currentUser || !currentUser.sessionId) return;
+
+    const checkSession = async () => {
+      const { data: latestUser } = await supabase
+        .from('users')
+        .select('session_id')
+        .eq('id', currentUser.id)
+        .maybeSingle();
+
+      if (latestUser && latestUser.session_id && latestUser.session_id !== currentUser.sessionId) {
+        showAlert("Logged Out", "You have been logged in on another device. Please login again.");
+        handleLogout();
+      }
+    };
+
+    const interval = setInterval(checkSession, 15000); // Check every 15 seconds
+    return () => clearInterval(interval);
+  }, [currentUser]);
 
   // --- Scroll to top on page change ---
   useEffect(() => {
@@ -464,6 +495,7 @@ const App: React.FC = () => {
 
           if (authData.session) {
             // Direct login if Supabase allows it (Confirm Email is OFF)
+            const newSessionId = Math.random().toString(36).substring(7);
             const formattedUser: User = {
               id: authData.user.id,
               fullName: fullName.trim(),
@@ -472,8 +504,13 @@ const App: React.FC = () => {
               subscription: isAdmin ? SubscriptionStatus.PRO : SubscriptionStatus.FREE,
               trialsUsed: 0,
               isAdmin: isAdmin,
-              utr: ''
+              utr: '',
+              sessionId: newSessionId
             };
+
+            // Update session_id in DB
+            await supabase.from('users').update({ session_id: newSessionId }).eq('id', authData.user.id);
+
             setCurrentUser(formattedUser);
             localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
             setCurrentPage(isAdmin ? 'admin' : 'dashboard');
@@ -507,6 +544,7 @@ const App: React.FC = () => {
           
           if (userData && userData.password === cleanPass) {
             const isAdmin = userData.is_admin || cleanEmail === 'lallusinghnetam0@gmail.com' || cleanEmail === '8839191411@gmail.com' || cleanEmail === 'testtrail@gmail.com';
+            const newSessionId = Math.random().toString(36).substring(7);
             const formattedUser: User = {
               id: userData.id,
               fullName: userData.full_name,
@@ -515,8 +553,12 @@ const App: React.FC = () => {
               subscription: userData.subscription as SubscriptionStatus,
               trialsUsed: userData.trials_used,
               isAdmin: isAdmin,
-              utr: userData.utr
+              utr: userData.utr,
+              sessionId: newSessionId
             };
+
+            // Update session_id in DB
+            await supabase.from('users').update({ session_id: newSessionId }).eq('id', userData.id);
 
             localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
             setCurrentUser(formattedUser);
@@ -548,6 +590,7 @@ const App: React.FC = () => {
           }
 
           const isAdmin = cleanEmail === 'lallusinghnetam0@gmail.com' || cleanEmail === '8839191411@gmail.com' || cleanEmail === 'testtrail@gmail.com';
+          const newSessionId = Math.random().toString(36).substring(7);
           const updatedUser: User = {
             id: userData.id,
             fullName: userData.full_name,
@@ -556,8 +599,12 @@ const App: React.FC = () => {
             subscription: userData.subscription as SubscriptionStatus,
             trialsUsed: userData.trials_used,
             isAdmin: isAdmin,
-            utr: userData.utr
+            utr: userData.utr,
+            sessionId: newSessionId
           };
+
+          // Update session_id in DB
+          await supabase.from('users').update({ session_id: newSessionId }).eq('id', userData.id);
 
           localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
           setCurrentUser(updatedUser);
