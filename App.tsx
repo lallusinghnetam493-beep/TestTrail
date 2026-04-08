@@ -56,8 +56,8 @@ const CURRENT_USER_KEY = 'tt_current_user';
 
 // --- Mock Initial Config ---
 const DEFAULT_CONFIG: AppConfig = {
-  upiId: 'netam..@ybl',
-  subscriptionPrice: 50,
+  upiId: '8839191411@ibl',
+  subscriptionPrice: 100,
 };
 
 const App: React.FC = () => {
@@ -124,36 +124,37 @@ const App: React.FC = () => {
       }
 
       try {
-        // 1. Parallel Load: Config and Session
-        const [configRes, sessionRes] = await Promise.all([
-          supabase.from('config').select('*').single(),
-          supabase.auth.getSession()
-        ]);
-
-        // Handle Config
-        if (configRes.data) {
+        // 1. Load Config
+        const { data: configData, error: configError } = await supabase
+          .from('config')
+          .select('*')
+          .single();
+        
+        if (configData) {
           setAppConfig({
-            upiId: configRes.data.upi_id,
-            subscriptionPrice: configRes.data.subscription_price
+            upiId: configData.upi_id,
+            subscriptionPrice: configData.subscription_price
           });
-        } else if (configRes.error && configRes.error.code === 'PGRST116') {
+        } else if (configError && configError.code === 'PGRST116') {
+          // No config found, create default
           await supabase.from('config').insert([{
             upi_id: DEFAULT_CONFIG.upiId,
             subscription_price: DEFAULT_CONFIG.subscriptionPrice
           }]);
         }
 
-        // Handle Session
-        const session = sessionRes.data.session;
-        if (session) {
-          // Load user data and results in parallel
-          const [userRes, resultsRes] = await Promise.all([
-            supabase.from('users').select('*').eq('id', session.user.id).single(),
-            supabase.from('results').select('*').eq('user_id', session.user.id).order('date', { ascending: false })
-          ]);
-
-          if (userRes.data) {
-            const latestUser = userRes.data;
+        // 2. Load Current User from LocalStorage (Session)
+        const savedUser = localStorage.getItem(CURRENT_USER_KEY);
+        if (savedUser) {
+          const parsedUser = JSON.parse(savedUser);
+          // Verify user still exists and get latest data
+          const { data: latestUser } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', parsedUser.id)
+            .single();
+          
+          if (latestUser) {
             const formattedUser: User = {
               id: latestUser.id,
               fullName: latestUser.full_name,
@@ -167,8 +168,15 @@ const App: React.FC = () => {
             setCurrentUser(formattedUser);
             localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
 
-            if (resultsRes.data) {
-              setTestResults(resultsRes.data.map(r => ({
+            // Load results for this user
+            const { data: resultsData } = await supabase
+              .from('results')
+              .select('*')
+              .eq('user_id', formattedUser.id)
+              .order('date', { ascending: false });
+            
+            if (resultsData) {
+              setTestResults(resultsData.map(r => ({
                 id: r.id,
                 userId: r.user_id,
                 examName: r.exam_name,
@@ -182,18 +190,13 @@ const App: React.FC = () => {
                 userAnswers: JSON.parse(r.user_answers)
               })));
             }
-          }
-        } else {
-          // No session, check localStorage for guest/partial data if any
-          const savedUser = localStorage.getItem(CURRENT_USER_KEY);
-          if (savedUser) {
-            // If there's a saved user but no session, they might have been logged out
+          } else {
             localStorage.removeItem(CURRENT_USER_KEY);
           }
         }
       } catch (err) {
         console.error('Error initializing app:', err);
-        // Don't block the app if initialization fails, just log it
+        setError('Failed to initialize app. Please check your connection.');
       } finally {
         setIsLoading(false);
       }
@@ -223,13 +226,13 @@ const App: React.FC = () => {
         }
 
         // Normal sign in
-        const [userRes, resultsRes] = await Promise.all([
-          supabase.from('users').select('*').eq('id', session.user.id).single(),
-          supabase.from('results').select('*').eq('user_id', session.user.id).order('date', { ascending: false })
-        ]);
+        const { data: latestUser } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
         
-        if (userRes.data) {
-          const latestUser = userRes.data;
+        if (latestUser) {
           const formattedUser: User = {
             id: latestUser.id,
             fullName: latestUser.full_name,
@@ -242,22 +245,6 @@ const App: React.FC = () => {
           };
           setCurrentUser(formattedUser);
           localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
-
-          if (resultsRes.data) {
-            setTestResults(resultsRes.data.map(r => ({
-              id: r.id,
-              userId: r.user_id,
-              examName: r.exam_name,
-              score: r.score,
-              total: r.total,
-              correct: r.correct,
-              wrong: r.wrong,
-              percentage: r.percentage,
-              date: r.date,
-              questions: JSON.parse(r.questions),
-              userAnswers: JSON.parse(r.user_answers)
-            })));
-          }
           setCurrentPage('dashboard');
         }
       } else if (event === 'SIGNED_OUT') {
@@ -275,7 +262,7 @@ const App: React.FC = () => {
 
   // --- Admin User Loading ---
   useEffect(() => {
-    if (currentPage === 'admin' && currentUser?.isAdmin && users.length === 0) {
+    if (currentPage === 'admin' && currentUser?.isAdmin) {
       const loadAllUsers = async () => {
         const { data: usersData } = await supabase
           .from('users')
@@ -297,7 +284,7 @@ const App: React.FC = () => {
       };
       loadAllUsers();
     }
-  }, [currentPage, currentUser, users.length]);
+  }, [currentPage, currentUser]);
 
   // --- Local Auth Handlers ---
   const handleAuth = async (fullName: string, email: string, pass: string, confirmPass?: string) => {
@@ -354,7 +341,6 @@ const App: React.FC = () => {
 
           if (insertError) {
             console.error('Metadata insert error:', insertError);
-            throw new Error('Failed to create user profile. Please try again.');
           }
 
           if (authData.session) {
@@ -398,13 +384,11 @@ const App: React.FC = () => {
         }
 
         if (authData.user) {
-          const { data: userDataRes, resultsData: resultsResData } = await Promise.all([
-            supabase.from('users').select('*').eq('id', authData.user.id).maybeSingle(),
-            supabase.from('results').select('*').eq('user_id', authData.user.id).order('date', { ascending: false })
-          ]).then(([u, r]) => ({ data: u.data, resultsData: r.data }));
-
-          const userData = userDataRes;
-          const resultsData = resultsResData;
+          const { data: userData } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', authData.user.id)
+            .maybeSingle();
 
           if (!userData) {
             throw new Error('User data not found in database.');
@@ -424,6 +408,13 @@ const App: React.FC = () => {
 
           localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
           setCurrentUser(updatedUser);
+          
+          // Load results
+          const { data: resultsData } = await supabase
+            .from('results')
+            .select('*')
+            .eq('user_id', updatedUser.id)
+            .order('date', { ascending: false });
           
           if (resultsData) {
             setTestResults(resultsData.map(r => ({
