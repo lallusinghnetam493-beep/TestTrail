@@ -56,8 +56,8 @@ const CURRENT_USER_KEY = 'tt_current_user';
 
 // --- Mock Initial Config ---
 const DEFAULT_CONFIG: AppConfig = {
-  upiId: '8839191411@ibl',
-  subscriptionPrice: 100,
+  upiId: 'netam..@ybl',
+  subscriptionPrice: 50,
 };
 
 const App: React.FC = () => {
