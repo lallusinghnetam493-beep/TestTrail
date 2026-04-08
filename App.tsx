@@ -30,7 +30,8 @@ import {
   CheckCircle2,
   Copy,
   Eye,
-  EyeOff
+  EyeOff,
+  Star
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -39,7 +40,8 @@ import {
   SubscriptionStatus, 
   Question, 
   TestResult, 
-  AppConfig 
+  AppConfig,
+  Difficulty
 } from './types';
 import { generateQuestions } from './services/geminiService';
 import { supabase } from './supabase';
@@ -47,6 +49,14 @@ import { supabase } from './supabase';
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+const getRating = (percentage: number) => {
+  if (percentage >= 90) return { label: 'Excellent', stars: 5, color: 'text-green-400' };
+  if (percentage >= 75) return { label: 'Very Good', stars: 4, color: 'text-emerald-400' };
+  if (percentage >= 50) return { label: 'Good', stars: 3, color: 'text-yellow-400' };
+  if (percentage >= 35) return { label: 'Average', stars: 2, color: 'text-orange-400' };
+  return { label: 'Poor', stars: 1, color: 'text-red-400' };
+};
 
 // --- Local Storage Keys ---
 const CONFIG_KEY = 'tt_config';
@@ -59,6 +69,7 @@ const DEFAULT_CONFIG: AppConfig = {
   upiId: '8839191411@ibl',
   subscriptionPrice: 100,
 };
+
 
 const App: React.FC = () => {
   // --- State ---
@@ -74,6 +85,7 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [testLanguage, setTestLanguage] = useState<'English' | 'Hindi'>('English');
+  const [testDifficulty, setTestDifficulty] = useState<Difficulty>('Medium');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [modal, setModal] = useState<{
     isOpen: boolean;
@@ -291,6 +303,11 @@ const App: React.FC = () => {
       clearTimeout(timer);
     };
   }, []);
+
+  // --- Scroll to top on page change ---
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [currentPage]);
 
   // --- Admin User Loading ---
   useEffect(() => {
@@ -606,7 +623,7 @@ const App: React.FC = () => {
   };
 
   // --- Test Logic ---
-  const startTest = async (topic: string, isPro: boolean, lang: 'English' | 'Hindi') => {
+  const startTest = async (topic: string, isPro: boolean, lang: 'English' | 'Hindi', difficulty: Difficulty) => {
     if (!currentUser) return;
 
     // Restriction Logic
@@ -635,7 +652,7 @@ const App: React.FC = () => {
     setError(null);
     try {
       const count = isPro ? 100 : 5;
-      const questions = await generateQuestions(topic, count, lang);
+      const questions = await generateQuestions(topic, count, lang, difficulty);
       setCurrentTest({ topic, questions, isPro, language: lang });
       setUserAnswers(new Array(questions.length).fill(-1));
       setActiveQuestionIndex(0);
@@ -817,9 +834,13 @@ const App: React.FC = () => {
         className="flex items-center gap-3 cursor-pointer group" 
         onClick={() => setCurrentPage('home')}
       >
-        <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center font-black text-white shadow-xl shadow-indigo-500/20 group-hover:scale-110 transition-transform">
+        <motion.div 
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center font-black text-white shadow-xl shadow-indigo-500/20 group-hover:scale-110 transition-transform"
+        >
           T
-        </div>
+        </motion.div>
         <span className="text-2xl font-black tracking-tighter">
           Test<span className="gradient-text">Trail</span>
         </span>
@@ -874,12 +895,14 @@ const App: React.FC = () => {
             )}
           </>
         ) : (
-          <button 
+          <motion.button 
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
             onClick={() => { setAuthMode('login'); setCurrentPage('auth'); }}
             className="px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 rounded-xl text-sm font-black uppercase tracking-widest transition-all shadow-xl shadow-indigo-500/20 active:scale-95"
           >
             Login
-          </button>
+          </motion.button>
         )}
       </div>
 
@@ -969,7 +992,9 @@ const App: React.FC = () => {
         </p>
         
         <div className="flex flex-col sm:flex-row gap-5 justify-center items-center pt-6">
-          <button 
+          <motion.button 
+            whileHover={{ scale: 1.05, y: -5 }}
+            whileTap={{ scale: 0.95 }}
             onClick={() => {
               if (currentUser) setCurrentPage(currentUser.isAdmin ? 'admin' : 'dashboard');
               else { setAuthMode('signup'); setCurrentPage('auth'); }
@@ -977,7 +1002,7 @@ const App: React.FC = () => {
             className="w-full sm:w-auto px-10 py-5 bg-indigo-500 hover:bg-indigo-600 rounded-[2rem] font-black text-lg shadow-2xl shadow-indigo-500/40 transition-all flex items-center justify-center gap-3 group active:scale-95"
           >
             Start Mock Test <ChevronRight className="group-hover:translate-x-1 transition-transform" />
-          </button>
+          </motion.button>
           <button 
              onClick={() => {
                if (currentUser) setCurrentPage(currentUser.isAdmin ? 'admin' : 'dashboard');
@@ -1019,7 +1044,7 @@ const App: React.FC = () => {
                    {[
                      { val: '50K+', label: 'Tests Generated' },
                      { val: '4.9/5', label: 'Student Rating' },
-                     { val: '99%', label: 'Accuracy' }
+                     { val: '10K+', label: 'Active Learners' }
                    ].map((stat, i) => (
                      <div key={i} className="text-center space-y-2">
                        <div className="text-3xl md:text-5xl font-black text-white tracking-tighter">{stat.val}</div>
@@ -1262,21 +1287,41 @@ const App: React.FC = () => {
                   />
                 </div>
 
-                <div className="flex items-center gap-6 px-2">
-                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Select Language:</span>
-                  <div className="flex glass p-1.5 rounded-2xl border border-white/5">
-                    {(['English', 'Hindi'] as const).map(lang => (
-                      <button 
-                        key={lang}
-                        onClick={() => setTestLanguage(lang)}
-                        className={cn(
-                          "px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all",
-                          testLanguage === lang ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20" : "text-slate-500 hover:text-slate-300"
-                        )}
-                      >
-                        {lang}
-                      </button>
-                    ))}
+                <div className="flex flex-col md:flex-row md:items-center gap-6 px-2">
+                  <div className="flex items-center gap-4">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Language:</span>
+                    <div className="flex glass p-1 rounded-xl border border-white/5">
+                      {(['English', 'Hindi'] as const).map(lang => (
+                        <button 
+                          key={lang}
+                          onClick={() => setTestLanguage(lang)}
+                          className={cn(
+                            "px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                            testLanguage === lang ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20" : "text-slate-500 hover:text-slate-300"
+                          )}
+                        >
+                          {lang}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-4">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Difficulty:</span>
+                    <div className="flex glass p-1 rounded-xl border border-white/5">
+                      {(['Easy', 'Medium', 'Hard'] as const).map(diff => (
+                        <button 
+                          key={diff}
+                          onClick={() => setTestDifficulty(diff)}
+                          className={cn(
+                            "px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                            testDifficulty === diff ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20" : "text-slate-500 hover:text-slate-300"
+                          )}
+                        >
+                          {diff}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1284,7 +1329,7 @@ const App: React.FC = () => {
               <div className="flex flex-col sm:flex-row gap-5 pt-4">
                 <button 
                   disabled={isLoading}
-                  onClick={() => startTest(topic, false, testLanguage)}
+                  onClick={() => startTest(topic, false, testLanguage, testDifficulty)}
                   className="flex-1 py-5 glass hover:bg-white/10 rounded-2xl font-black text-slate-300 border border-white/10 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
                 >
                   {isLoading ? <Loader2 className="animate-spin" /> : <Zap size={20} />}
@@ -1292,7 +1337,7 @@ const App: React.FC = () => {
                 </button>
                 <button 
                   disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && currentUser?.trialsUsed >= 1)}
-                  onClick={() => startTest(topic, true, testLanguage)}
+                  onClick={() => startTest(topic, true, testLanguage, testDifficulty)}
                   className="flex-1 py-5 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-white shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:bg-slate-800 disabled:text-slate-500 flex items-center justify-center gap-3"
                 >
                   {isLoading ? <Loader2 className="animate-spin" /> : <Trophy size={20} />}
@@ -1333,12 +1378,22 @@ const App: React.FC = () => {
                       </div>
                       <div className="text-right">
                         <div className={cn(
-                          "text-3xl font-black tracking-tighter",
-                          res.percentage >= 70 ? 'text-green-400' : res.percentage >= 40 ? 'text-yellow-400' : 'text-red-400'
+                          "text-xl font-black tracking-tighter flex items-center justify-end gap-1",
+                          getRating(res.percentage).color
                         )}>
-                          {res.percentage.toFixed(0)}%
+                          {getRating(res.percentage).label}
                         </div>
-                        <div className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-600">Accuracy</div>
+                        <div className="flex items-center justify-end gap-0.5 mt-1">
+                          {[...Array(5)].map((_, i) => (
+                            <Star 
+                              key={i} 
+                              size={10} 
+                              className={i < getRating(res.percentage).stars ? getRating(res.percentage).color : 'text-slate-700'} 
+                              fill="currentColor" 
+                            />
+                          ))}
+                        </div>
+                        <div className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-600 mt-1">Student Rating</div>
                       </div>
                     </motion.div>
                   ))
@@ -1353,7 +1408,12 @@ const App: React.FC = () => {
               <div className="space-y-6">
                 {[
                   { label: 'Total Tests', val: testResults.length, icon: FileText, color: 'text-blue-400' },
-                  { label: 'Avg Accuracy', val: `${(testResults.reduce((acc, r) => acc + r.percentage, 0) / (testResults.length || 1)).toFixed(0)}%`, icon: Target, color: 'text-emerald-400' },
+                  { 
+                    label: 'Overall Rating', 
+                    val: getRating(testResults.reduce((acc, r) => acc + r.percentage, 0) / (testResults.length || 1)).label, 
+                    icon: Star, 
+                    color: getRating(testResults.reduce((acc, r) => acc + r.percentage, 0) / (testResults.length || 1)).color 
+                  },
                   { label: 'Free Tests Left', val: Math.max(0, 1 - (currentUser?.trialsUsed || 0)), icon: Zap, color: 'text-amber-400' }
                 ].map((stat, i) => (
                   <div key={i} className="flex items-center gap-4">
@@ -1711,8 +1771,14 @@ const App: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map(user => (
-                    <tr key={user.id} className="group">
+                  {users.map((user, index) => (
+                    <motion.tr 
+                      key={user.id} 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="group"
+                    >
                       <td className="px-4 py-4 bg-white/[0.02] rounded-l-2xl border-y border-l border-white/[0.05]">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 font-bold text-xs">
@@ -1772,7 +1838,7 @@ const App: React.FC = () => {
                           )}
                         </div>
                       </td>
-                    </tr>
+                    </motion.tr>
                   ))}
                 </tbody>
               </table>
@@ -1797,7 +1863,7 @@ const App: React.FC = () => {
 
     return (
       <div className="pt-24 pb-12 px-6 min-h-screen flex flex-col max-w-4xl mx-auto">
-        <div className="flex justify-between items-center mb-8 glass p-4 rounded-2xl">
+        <div className="flex justify-between items-center mb-4 glass p-4 rounded-2xl">
           <div className="space-y-0.5">
             <h3 className="font-bold text-slate-400 text-xs uppercase tracking-widest">Mock Test ({currentTest.language})</h3>
             <div className="font-bold text-lg truncate max-w-[150px] md:max-w-none">{currentTest.topic}</div>
@@ -1814,38 +1880,56 @@ const App: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex-1 glass p-8 rounded-[2rem] space-y-8 shadow-[0_0_50px_rgba(99,102,241,0.1)]">
-          <div className="space-y-4">
-            <div className="text-xs font-black text-indigo-400 uppercase tracking-widest">Question {activeQuestionIndex + 1}</div>
-            <h2 className="text-xl md:text-2xl font-bold leading-relaxed">{q.text}</h2>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3">
-            {q.options.map((opt, idx) => (
-              <button
-                key={idx}
-                onClick={() => {
-                  const newAns = [...userAnswers];
-                  newAns[activeQuestionIndex] = idx;
-                  setUserAnswers(newAns);
-                }}
-                className={`w-full p-5 text-left rounded-2xl border transition-all flex items-center justify-between group ${
-                  selected === idx 
-                    ? 'bg-indigo-500/20 border-indigo-500 text-white' 
-                    : 'bg-white/5 border-white/10 text-slate-400 hover:border-white/30 hover:bg-white/[0.07]'
-                }`}
-              >
-                <div className="flex items-center gap-4">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold border ${
-                    selected === idx ? 'bg-indigo-500 border-indigo-400 text-white' : 'bg-white/5 border-white/10'
-                  }`}>{String.fromCharCode(65 + idx)}</div>
-                  <span className="font-medium">{opt}</span>
-                </div>
-                {selected === idx && <Check size={20} />}
-              </button>
-            ))}
-          </div>
+        {/* Progress Bar */}
+        <div className="w-full h-1.5 bg-white/5 rounded-full mb-8 overflow-hidden">
+          <motion.div 
+            initial={{ width: 0 }}
+            animate={{ width: `${((activeQuestionIndex + 1) / currentTest.questions.length) * 100}%` }}
+            className="h-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]"
+          />
         </div>
+
+        <AnimatePresence mode="wait">
+          <motion.div 
+            key={activeQuestionIndex}
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.2 }}
+            className="flex-1 glass p-8 rounded-[2rem] space-y-8 shadow-[0_0_50px_rgba(99,102,241,0.1)]"
+          >
+            <div className="space-y-4">
+              <div className="text-xs font-black text-indigo-400 uppercase tracking-widest">Question {activeQuestionIndex + 1}</div>
+              <h2 className="text-xl md:text-2xl font-bold leading-relaxed">{q.text}</h2>
+            </div>
+
+            <div className="grid grid-cols-1 gap-3">
+              {q.options.map((opt, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    const newAns = [...userAnswers];
+                    newAns[activeQuestionIndex] = idx;
+                    setUserAnswers(newAns);
+                  }}
+                  className={`w-full p-5 text-left rounded-2xl border transition-all flex items-center justify-between group ${
+                    selected === idx 
+                      ? 'bg-indigo-500/20 border-indigo-500 text-white' 
+                      : 'bg-white/5 border-white/10 text-slate-400 hover:border-white/30 hover:bg-white/[0.07]'
+                  }`}
+                >
+                  <div className="flex items-center gap-4">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold border ${
+                      selected === idx ? 'bg-indigo-500 border-indigo-400 text-white' : 'bg-white/5 border-white/10'
+                    }`}>{String.fromCharCode(65 + idx)}</div>
+                    <span className="font-medium">{opt}</span>
+                  </div>
+                  {selected === idx && <Check size={20} />}
+                </button>
+              ))}
+            </div>
+          </motion.div>
+        </AnimatePresence>
 
         <div className="mt-8 flex gap-4">
           <button disabled={activeQuestionIndex === 0} onClick={() => setActiveQuestionIndex(prev => prev - 1)} className="px-6 py-4 glass rounded-2xl font-bold hover:bg-white/10 disabled:opacity-30 flex items-center gap-2">
@@ -1900,11 +1984,20 @@ const App: React.FC = () => {
     }
 
     return (
-      <div className="pt-24 pb-12 px-6 flex flex-col items-center max-w-3xl mx-auto space-y-8">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="pt-24 pb-12 px-6 flex flex-col items-center max-w-3xl mx-auto space-y-8"
+      >
         <div className="text-center space-y-2">
-          <div className="w-20 h-20 bg-yellow-500/20 rounded-full mx-auto flex items-center justify-center text-yellow-500 animate-bounce">
+          <motion.div 
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ type: "spring", stiffness: 200, damping: 10 }}
+            className="w-20 h-20 bg-yellow-500/20 rounded-full mx-auto flex items-center justify-center text-yellow-500"
+          >
             <Trophy size={48} />
-          </div>
+          </motion.div>
           <h2 className="text-4xl font-black">Test Completed!</h2>
           <p className="text-slate-400">Great effort! Performance breakdown for <span className="text-white font-bold">{lastResult.examName}</span></p>
         </div>
@@ -1915,10 +2008,14 @@ const App: React.FC = () => {
              { label: 'Wrong', value: lastResult.wrong, color: 'text-red-400' },
              { label: 'Percentage', value: `${lastResult.percentage.toFixed(0)}%`, color: 'text-purple-400' },
            ].map((stat, i) => (
-             <div key={i} className="glass-card p-6 rounded-[2rem] text-center space-y-1">
+             <motion.div 
+               key={i} 
+               whileHover={{ y: -5, scale: 1.02 }}
+               className="glass-card p-6 rounded-[2rem] text-center space-y-1"
+             >
                <div className="text-[10px] text-slate-500 font-black uppercase tracking-widest">{stat.label}</div>
                <div className={`text-2xl font-black ${stat.color}`}>{stat.value}</div>
-             </div>
+             </motion.div>
            ))}
         </div>
         <div className="w-full glass p-8 rounded-[2rem] space-y-6">
@@ -1927,7 +2024,7 @@ const App: React.FC = () => {
             <button onClick={() => setCurrentPage('dashboard')} className="w-full py-4 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-bold shadow-xl shadow-indigo-500/30">Back to Dashboard</button>
           </div>
         </div>
-      </div>
+      </motion.div>
     );
   };
 
@@ -1980,52 +2077,62 @@ const App: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200">
-      <Navbar />
-      <Modal />
-      <div className="fixed top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-500/10 rounded-full blur-[120px] pointer-events-none -z-10"></div>
-      <div className="fixed bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-purple-500/10 rounded-full blur-[120px] pointer-events-none -z-10"></div>
-      <main>
-        {currentPage === 'home' && <Home />}
-        {currentPage === 'auth' && <Auth />}
-        {currentPage === 'dashboard' && <Dashboard />}
-        {currentPage === 'payment' && <Payment />}
-        {currentPage === 'test' && <TestInterface />}
-        {currentPage === 'result' && <ResultPage />}
-        {currentPage === 'admin' && <AdminPanel />}
-        {currentPage === 'profile' && <ProfilePage />}
-      </main>
-      {isLoading && (
-        <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center space-y-4">
-          <div className="w-16 h-16 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
-          <div className="text-center px-6">
-            <p className="font-bold text-lg">{loadingMessage}</p>
-            {error && (
-              <p className="text-red-400 text-sm mt-4 max-w-xs mx-auto">{error}</p>
-            )}
-            <div className="flex flex-col gap-2 mt-6">
+        <Navbar />
+        <Modal />
+        <div className="fixed top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-500/10 rounded-full blur-[120px] pointer-events-none -z-10"></div>
+        <div className="fixed bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-purple-500/10 rounded-full blur-[120px] pointer-events-none -z-10"></div>
+        <main className="relative">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={currentPage}
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              transition={{ duration: 0.3, ease: "easeInOut" }}
+            >
+              {currentPage === 'home' && <Home />}
+              {currentPage === 'auth' && <Auth />}
+              {currentPage === 'dashboard' && <Dashboard />}
+              {currentPage === 'payment' && <Payment />}
+              {currentPage === 'test' && <TestInterface />}
+              {currentPage === 'result' && <ResultPage />}
+              {currentPage === 'admin' && <AdminPanel />}
+              {currentPage === 'profile' && <ProfilePage />}
+            </motion.div>
+          </AnimatePresence>
+        </main>
+        {isLoading && (
+          <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center space-y-4">
+            <div className="w-16 h-16 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
+            <div className="text-center px-6">
+              <p className="font-bold text-lg">{loadingMessage}</p>
               {error && (
-                <button 
-                  onClick={() => window.location.reload()}
-                  className="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold transition-all"
-                >
-                  Retry
-                </button>
+                <p className="text-red-400 text-sm mt-4 max-w-xs mx-auto">{error}</p>
               )}
-              <button 
-                onClick={() => setIsLoading(false)}
-                className="px-6 py-2 bg-white/5 hover:bg-white/10 text-slate-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border border-white/10"
-              >
-                Cancel / Close
-              </button>
+              <div className="flex flex-col gap-2 mt-6">
+                {error && (
+                  <button 
+                    onClick={() => window.location.reload()}
+                    className="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold transition-all"
+                  >
+                    Retry
+                  </button>
+                )}
+                <button 
+                  onClick={() => setIsLoading(false)}
+                  className="px-6 py-2 bg-white/5 hover:bg-white/10 text-slate-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border border-white/10"
+                >
+                  Cancel / Close
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-      <footer className="py-12 px-6 border-t border-white/5 text-center text-slate-500 text-sm">
-         <p>© 2024 TestTrail. All rights reserved.</p>
-         <p className="mt-1">Handcrafted for future civil servants of India.</p>
-      </footer>
-    </div>
+        )}
+        <footer className="py-12 px-6 border-t border-white/5 text-center text-slate-500 text-sm">
+           <p>© 2024 TestTrail. All rights reserved.</p>
+           <p className="mt-1">Handcrafted for future civil servants of India.</p>
+        </footer>
+      </div>
   );
 };
 

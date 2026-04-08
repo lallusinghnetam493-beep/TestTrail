@@ -1,4 +1,6 @@
 
+export type Difficulty = 'Easy' | 'Medium' | 'Hard';
+
 export enum SubscriptionStatus {
   FREE = 'FREE',
   PENDING = 'PENDING',
