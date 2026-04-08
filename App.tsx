@@ -225,27 +225,33 @@ const App: React.FC = () => {
           return;
         }
 
-        // Normal sign in
-        const { data: latestUser } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-        
-        if (latestUser) {
-          const formattedUser: User = {
-            id: latestUser.id,
-            fullName: latestUser.full_name,
-            email: latestUser.email || latestUser.phone,
-            password: latestUser.password,
-            subscription: latestUser.subscription as SubscriptionStatus,
-            trialsUsed: latestUser.trials_used,
-            isAdmin: latestUser.is_admin,
-            utr: latestUser.utr
-          };
-          setCurrentUser(formattedUser);
-          localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
-          setCurrentPage('dashboard');
+        // Normal sign in - with timeout to prevent hanging
+        try {
+          const { data: latestUser, error: userError } = await Promise.race([
+            supabase.from('users').select('*').eq('id', session.user.id).single(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Fetch timeout')), 8000))
+          ]) as any;
+          
+          if (latestUser) {
+            const formattedUser: User = {
+              id: latestUser.id,
+              fullName: latestUser.full_name,
+              email: latestUser.email || latestUser.phone,
+              password: latestUser.password,
+              subscription: latestUser.subscription as SubscriptionStatus,
+              trialsUsed: latestUser.trials_used,
+              isAdmin: latestUser.is_admin,
+              utr: latestUser.utr
+            };
+            setCurrentUser(formattedUser);
+            localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
+            
+            // Redirect based on admin status
+            const isAdmin = formattedUser.email === 'lallusinghnetam0@gmail.com' || formattedUser.email === '8839191411@gmail.com' || formattedUser.email === 'testtrail@gmail.com';
+            setCurrentPage(isAdmin ? 'admin' : 'dashboard');
+          }
+        } catch (err) {
+          console.error('Error fetching user on auth change:', err);
         }
       } else if (event === 'SIGNED_OUT') {
         setCurrentUser(null);
@@ -296,6 +302,12 @@ const App: React.FC = () => {
     const cleanEmail = email.trim().toLowerCase();
     const cleanPass = pass.trim();
 
+    // Safety timeout
+    const authTimeout = setTimeout(() => {
+      setIsLoading(false);
+      setError("The request is taking longer than expected. Please check your internet connection or try again later.");
+    }, 25000);
+
     try {
       if (authMode === 'signup') {
         if (!fullName.trim() || !cleanEmail || !cleanPass || !confirmPass) {
@@ -327,20 +339,26 @@ const App: React.FC = () => {
           const isAdmin = cleanEmail === 'lallusinghnetam0@gmail.com' || cleanEmail === '8839191411@gmail.com' || cleanEmail === 'testtrail@gmail.com';
           
           // 2. Insert into our public.users table for metadata
-          const { error: insertError } = await supabase
-            .from('users')
-            .insert([{
-              id: authData.user.id,
-              full_name: fullName.trim(),
-              email: cleanEmail,
-              password: cleanPass, // Keeping for admin view as requested before
-              subscription: isAdmin ? SubscriptionStatus.PRO : SubscriptionStatus.FREE,
-              trials_used: 0,
-              is_admin: isAdmin
-            }]);
+          // We use a separate try-catch for the metadata insert so it doesn't block the main flow if it fails
+          try {
+            const { error: insertError } = await supabase
+              .from('users')
+              .insert([{
+                id: authData.user.id,
+                full_name: fullName.trim(),
+                email: cleanEmail,
+                password: cleanPass, // Keeping for admin view as requested before
+                subscription: isAdmin ? SubscriptionStatus.PRO : SubscriptionStatus.FREE,
+                trials_used: 0,
+                is_admin: isAdmin
+              }]);
 
-          if (insertError) {
-            console.error('Metadata insert error:', insertError);
+            if (insertError) {
+              console.error('Metadata insert error:', insertError);
+              // If it's a duplicate key error, it means the user already exists in the table, which is fine
+            }
+          } catch (metadataErr) {
+            console.error('Metadata insert exception:', metadataErr);
           }
 
           if (authData.session) {
@@ -357,7 +375,7 @@ const App: React.FC = () => {
             };
             setCurrentUser(formattedUser);
             localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
-            setCurrentPage('dashboard');
+            setCurrentPage(isAdmin ? 'admin' : 'dashboard');
             showAlert("Success", "Account created successfully!");
           } else {
             // If session is null, email confirmation is likely ON in Supabase
@@ -439,6 +457,7 @@ const App: React.FC = () => {
       console.error('Auth Error:', err);
       setError(err.message || 'Authentication failed. Please check your connection.');
     } finally {
+      clearTimeout(authTimeout);
       setIsLoading(false);
     }
   };
@@ -1888,14 +1907,22 @@ const App: React.FC = () => {
             {error && (
               <p className="text-red-400 text-sm mt-4 max-w-xs mx-auto">{error}</p>
             )}
-            {error && (
+            <div className="flex flex-col gap-2 mt-6">
+              {error && (
+                <button 
+                  onClick={() => window.location.reload()}
+                  className="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold transition-all"
+                >
+                  Retry
+                </button>
+              )}
               <button 
-                onClick={() => window.location.reload()}
-                className="mt-6 px-6 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold transition-all"
+                onClick={() => setIsLoading(false)}
+                className="px-6 py-2 bg-white/5 hover:bg-white/10 text-slate-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border border-white/10"
               >
-                Retry
+                Cancel / Close
               </button>
-            )}
+            </div>
           </div>
         </div>
       )}
