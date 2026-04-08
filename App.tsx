@@ -318,6 +318,36 @@ const App: React.FC = () => {
     }
   }, [currentPage, currentUser]);
 
+  // --- Test Results Loading ---
+  useEffect(() => {
+    if (currentUser && (currentPage === 'dashboard' || currentPage === 'admin')) {
+      const loadResults = async () => {
+        const { data: resultsData } = await supabase
+          .from('results')
+          .select('*')
+          .eq('user_id', currentUser.id)
+          .order('date', { ascending: false });
+        
+        if (resultsData) {
+          setTestResults(resultsData.map(r => ({
+            id: r.id,
+            userId: r.user_id,
+            examName: r.exam_name,
+            score: r.score,
+            total: r.total,
+            correct: r.correct,
+            wrong: r.wrong,
+            percentage: r.percentage,
+            date: r.date,
+            questions: JSON.parse(r.questions),
+            userAnswers: JSON.parse(r.user_answers)
+          })));
+        }
+      };
+      loadResults();
+    }
+  }, [currentPage, currentUser]);
+
   // --- Local Auth Handlers ---
   const handleAuth = async (fullName: string, email: string, pass: string, confirmPass?: string) => {
     setError(null);
@@ -328,11 +358,11 @@ const App: React.FC = () => {
     const cleanEmail = email.trim().toLowerCase();
     const cleanPass = pass.trim();
 
-    // Safety timeout
+    // Safety timeout - increased to 60s for slow connections
     const authTimeout = setTimeout(() => {
       setIsLoading(false);
-      setError("The request is taking longer than expected. Please check your internet connection or try again later.");
-    }, 25000);
+      setError("The request is taking longer than expected. This can happen due to slow internet. Please try again or use the 'Cancel' button and refresh the page.");
+    }, 60000);
 
     try {
       if (authMode === 'signup') {
@@ -474,29 +504,6 @@ const App: React.FC = () => {
             localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
             setCurrentUser(formattedUser);
             
-            // Load results
-            const { data: resultsData } = await supabase
-              .from('results')
-              .select('*')
-              .eq('user_id', formattedUser.id)
-              .order('date', { ascending: false });
-            
-            if (resultsData) {
-              setTestResults(resultsData.map(r => ({
-                id: r.id,
-                userId: r.user_id,
-                examName: r.exam_name,
-                score: r.score,
-                total: r.total,
-                correct: r.correct,
-                wrong: r.wrong,
-                percentage: r.percentage,
-                date: r.date,
-                questions: JSON.parse(r.questions),
-                userAnswers: JSON.parse(r.user_answers)
-              })));
-            }
-
             setCurrentPage(isAdmin ? 'admin' : 'dashboard');
             showAlert("Login Success", "Logged in successfully via secure backup.");
             return;
@@ -538,29 +545,6 @@ const App: React.FC = () => {
           localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
           setCurrentUser(updatedUser);
           
-          // Load results
-          const { data: resultsData } = await supabase
-            .from('results')
-            .select('*')
-            .eq('user_id', updatedUser.id)
-            .order('date', { ascending: false });
-          
-          if (resultsData) {
-            setTestResults(resultsData.map(r => ({
-              id: r.id,
-              userId: r.user_id,
-              examName: r.exam_name,
-              score: r.score,
-              total: r.total,
-              correct: r.correct,
-              wrong: r.wrong,
-              percentage: r.percentage,
-              date: r.date,
-              questions: JSON.parse(r.questions),
-              userAnswers: JSON.parse(r.user_answers)
-            })));
-          }
-
           setCurrentPage(isAdmin ? 'admin' : 'dashboard');
         }
       }
