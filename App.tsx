@@ -137,7 +137,7 @@ const App: React.FC = () => {
     }, 30000); // Increased to 30 seconds for slow connections
 
     const initApp = async () => {
-      setLoadingMessage('Loading App...');
+      setLoadingMessage('Please wait...');
       setIsLoadingWithRef(true);
       console.log('Initializing app...');
       
@@ -152,84 +152,77 @@ const App: React.FC = () => {
       }
 
       try {
-        // 1. Load Config
-        const { data: configData, error: configError } = await supabase
-          .from('config')
-          .select('*')
-          .single();
-        
-        if (configData) {
+        // Parallelize Config and User loading
+        const savedUser = localStorage.getItem(CURRENT_USER_KEY);
+        const parsedUser = savedUser ? JSON.parse(savedUser) : null;
+
+        const [configRes, userRes] = await Promise.all([
+          supabase.from('config').select('*').single(),
+          parsedUser ? supabase.from('users').select('*').eq('id', parsedUser.id).single() : Promise.resolve({ data: null, error: null })
+        ]);
+
+        // 1. Handle Config
+        if (configRes.data) {
           setAppConfig({
-            upiId: configData.upi_id,
-            subscriptionPrice: configData.subscription_price
+            upiId: configRes.data.upi_id,
+            subscriptionPrice: configRes.data.subscription_price
           });
-        } else if (configError && configError.code === 'PGRST116') {
-          // No config found, create default
+        } else if (configRes.error && configRes.error.code === 'PGRST116') {
           await supabase.from('config').insert([{
             upi_id: DEFAULT_CONFIG.upiId,
             subscription_price: DEFAULT_CONFIG.subscriptionPrice
           }]);
         }
 
-        // 2. Load Current User from LocalStorage (Session)
-        const savedUser = localStorage.getItem(CURRENT_USER_KEY);
-        if (savedUser) {
-          const parsedUser = JSON.parse(savedUser);
-          // Verify user still exists and get latest data
-          const { data: latestUser } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', parsedUser.id)
-            .single();
-          
-          if (latestUser) {
-            const formattedUser: User = {
-              id: latestUser.id,
-              fullName: latestUser.full_name,
-              email: latestUser.email || latestUser.phone,
-              password: latestUser.password,
-              subscription: latestUser.subscription as SubscriptionStatus,
-              trialsUsed: latestUser.trials_used,
-              isAdmin: latestUser.is_admin,
-              utr: latestUser.utr,
-              sessionId: latestUser.session_id
-            };
+        // 2. Handle User
+        if (userRes.data) {
+          const latestUser = userRes.data;
+          const formattedUser: User = {
+            id: latestUser.id,
+            fullName: latestUser.full_name,
+            email: latestUser.email || latestUser.phone,
+            password: latestUser.password,
+            subscription: latestUser.subscription as SubscriptionStatus,
+            trialsUsed: latestUser.trials_used,
+            isAdmin: latestUser.is_admin,
+            utr: latestUser.utr,
+            sessionId: latestUser.session_id
+          };
 
-            // Single Device Check
-            if (parsedUser.sessionId && latestUser.session_id && parsedUser.sessionId !== latestUser.session_id) {
-              showAlert("Logged Out", "You have been logged in on another device. Please login again.");
-              handleLogout();
-              return;
-            }
-
-            setCurrentUser(formattedUser);
-            localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
-
-            // Load results for this user
-            const { data: resultsData } = await supabase
-              .from('results')
-              .select('*')
-              .eq('user_id', formattedUser.id)
-              .order('date', { ascending: false });
-            
-            if (resultsData) {
-              setTestResults(resultsData.map(r => ({
-                id: r.id,
-                userId: r.user_id,
-                examName: r.exam_name,
-                score: r.score,
-                total: r.total,
-                correct: r.correct,
-                wrong: r.wrong,
-                percentage: r.percentage,
-                date: r.date,
-                questions: JSON.parse(r.questions),
-                userAnswers: JSON.parse(r.user_answers)
-              })));
-            }
-          } else {
-            localStorage.removeItem(CURRENT_USER_KEY);
+          // Single Device Check
+          if (parsedUser.sessionId && latestUser.session_id && parsedUser.sessionId !== latestUser.session_id) {
+            showAlert("Logged Out", "You have been logged in on another device. Please login again.");
+            handleLogout();
+            return;
           }
+
+          setCurrentUser(formattedUser);
+          localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
+
+          // Load results for this user
+          const { data: resultsData } = await supabase
+            .from('results')
+            .select('*')
+            .eq('user_id', formattedUser.id)
+            .order('date', { ascending: false });
+          
+          if (resultsData) {
+            setTestResults(resultsData.map(r => ({
+              id: r.id,
+              userId: r.user_id,
+              examName: r.exam_name,
+              score: r.score,
+              total: r.total,
+              correct: r.correct,
+              wrong: r.wrong,
+              percentage: r.percentage,
+              date: r.date,
+              questions: JSON.parse(r.questions),
+              userAnswers: JSON.parse(r.user_answers)
+            })));
+          }
+        } else if (parsedUser) {
+          localStorage.removeItem(CURRENT_USER_KEY);
         }
       } catch (err) {
         console.error('Error initializing app:', err);
@@ -409,23 +402,38 @@ const App: React.FC = () => {
   }, [currentPage, currentUser]);
 
   // --- Local Auth Handlers ---
+  const testSupabaseConnection = async () => {
+    setLoadingMessage('Testing connection to Supabase...');
+    setIsLoadingWithRef(true);
+    try {
+      const { data, error } = await supabase.from('config').select('count').limit(1);
+      if (error) throw error;
+      showAlert("Connection OK", "Supabase is responding correctly. If login is still slow, the project might be 'waking up' from a paused state. Please try again in 30 seconds.");
+    } catch (err: any) {
+      console.error('Connection Test Error:', err);
+      showAlert("Connection Error", "Supabase is not responding: " + err.message + ". This usually means the project is paused or your internet is blocking the connection.");
+    } finally {
+      setIsLoadingWithRef(false);
+    }
+  };
+
   const handleAuth = async (fullName: string, email: string, pass: string, confirmPass?: string) => {
     setError(null);
     setSuccessMessage(null);
-    setLoadingMessage(authMode === 'login' ? 'Logging in...' : 'Creating Account...');
+    setLoadingMessage(authMode === 'login' ? 'Logging in...' : 'Creating account...');
     setIsLoadingWithRef(true);
 
     const cleanEmail = email.trim().toLowerCase();
     const cleanPass = pass.trim();
 
-    // Safety timeout - reduced to 45s for better UX, will show retry options
+    // Safety timeout - increased to 120s to handle Supabase "cold starts" (paused projects)
     const authTimeout = setTimeout(() => {
       if (loadingRef.current) {
-        console.log('Auth timeout reached (45s)');
+        console.log('Auth timeout reached (120s)');
         setIsLoadingWithRef(false);
-        setError("Login/Signup is taking too long. This usually happens due to a slow internet connection or a temporary issue with the authentication server. Please check your internet and try again.");
+        setError("The authentication server is taking too long to respond. This can happen if the database is 'waking up' from a paused state or if there is a network block. Please wait 30 seconds and try again. If you are signing up, check if you received a confirmation email.");
       }
-    }, 45000);
+    }, 120000);
 
     try {
       console.log('Starting auth process:', authMode, cleanEmail);
@@ -492,23 +500,23 @@ const App: React.FC = () => {
           // 2. Insert into our public.users table for metadata
           console.log('Inserting user metadata...');
           try {
-            const { error: insertError } = await supabase
+            const { data: userData, error: insertError } = await supabase
               .from('users')
               .insert([{
                 id: authData.user.id,
                 full_name: fullName.trim(),
                 email: cleanEmail,
-                password: cleanPass, // Keeping for admin view as requested before
+                password: cleanPass, 
                 subscription: isAdmin ? SubscriptionStatus.PRO : SubscriptionStatus.FREE,
                 trials_used: 0,
                 is_admin: isAdmin,
                 session_id: newSessionId
-              }]);
+              }])
+              .select()
+              .single();
 
             if (insertError) {
               console.error('Metadata insert error:', insertError);
-              // If it's a duplicate key error, it means the user already exists in the table, which is fine
-              // But we still want to update the session_id if it exists
               await supabase.from('users').update({ session_id: newSessionId }).eq('id', authData.user.id);
             }
           } catch (metadataErr) {
@@ -599,19 +607,22 @@ const App: React.FC = () => {
 
         if (authData.user) {
           console.log('Auth login successful, fetching metadata...');
-          const { data: userData } = await supabase
-            .from('users')
-            .select('*')
-            .eq('id', authData.user.id)
-            .maybeSingle();
-
-          if (!userData) {
-            console.log('Metadata not found, checking fallback...');
-            throw new Error('User data not found in database.');
-          }
-
           const isAdmin = cleanEmail === 'lallusinghnetam0@gmail.com' || cleanEmail === '8839191411@gmail.com' || cleanEmail === 'testtrail@gmail.com';
           const newSessionId = Math.random().toString(36).substring(7);
+
+          // Combine Select and Update into one round trip
+          const { data: userData, error: updateError } = await supabase
+            .from('users')
+            .update({ session_id: newSessionId })
+            .eq('id', authData.user.id)
+            .select()
+            .maybeSingle();
+
+          if (!userData || updateError) {
+            console.log('Metadata sync failed, checking fallback...');
+            throw new Error('User data synchronization failed. Please try again.');
+          }
+
           const updatedUser: User = {
             id: userData.id,
             fullName: userData.full_name,
@@ -623,9 +634,6 @@ const App: React.FC = () => {
             utr: userData.utr,
             sessionId: newSessionId
           };
-
-          // Update session_id in DB
-          await supabase.from('users').update({ session_id: newSessionId }).eq('id', userData.id);
 
           localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
           setCurrentUser(updatedUser);
@@ -1117,18 +1125,6 @@ const App: React.FC = () => {
                    ))}
                  </div>
 
-                 <div className="grid grid-cols-3 gap-12 w-full pt-8 border-t border-white/5">
-                   {[
-                     { val: '50K+', label: 'Tests Generated' },
-                     { val: '4.9/5', label: 'Student Rating' },
-                     { val: '10K+', label: 'Active Learners' }
-                   ].map((stat, i) => (
-                     <div key={i} className="text-center space-y-2">
-                       <div className="text-3xl md:text-5xl font-black text-white tracking-tighter">{stat.val}</div>
-                       <div className="text-[9px] text-slate-500 font-black uppercase tracking-[0.2em]">{stat.label}</div>
-                     </div>
-                   ))}
-                 </div>
               </div>
            </motion.div>
         </div>
@@ -1286,6 +1282,15 @@ const App: React.FC = () => {
                 </>
               )}
             </p>
+
+            <div className="pt-6 border-t border-white/5 flex justify-center">
+              <button 
+                onClick={testSupabaseConnection}
+                className="text-[10px] font-black uppercase tracking-widest text-slate-600 hover:text-indigo-400 transition-colors flex items-center gap-2"
+              >
+                <Zap size={10} /> Check Server Connection
+              </button>
+            </div>
           </div>
         </motion.div>
       </div>
@@ -2179,7 +2184,7 @@ const App: React.FC = () => {
           </AnimatePresence>
         </main>
         {isLoading && (
-          <div className="fixed inset-0 z-[100] bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center space-y-4">
+          <div className="fixed inset-0 z-[100] bg-slate-950/60 flex flex-col items-center justify-center space-y-4">
             <div className="w-16 h-16 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
             <div className="text-center px-6">
               <p className="font-bold text-lg">{loadingMessage}</p>
