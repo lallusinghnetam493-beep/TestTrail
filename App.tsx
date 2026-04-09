@@ -139,9 +139,11 @@ const App: React.FC = () => {
     const initApp = async () => {
       setLoadingMessage('Loading App...');
       setIsLoadingWithRef(true);
+      console.log('Initializing app...');
       
       // Check if Supabase is configured
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+      console.log('Supabase URL check:', supabaseUrl ? 'Present' : 'Missing');
       if (!supabaseUrl || supabaseUrl === 'https://placeholder-url.supabase.co') {
         setError('Supabase is not configured. Please add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your environment variables and redeploy.');
         setIsLoadingWithRef(false);
@@ -416,15 +418,17 @@ const App: React.FC = () => {
     const cleanEmail = email.trim().toLowerCase();
     const cleanPass = pass.trim();
 
-    // Safety timeout - increased to 120s for very slow connections
+    // Safety timeout - reduced to 45s for better UX, will show retry options
     const authTimeout = setTimeout(() => {
       if (loadingRef.current) {
+        console.log('Auth timeout reached (45s)');
         setIsLoadingWithRef(false);
-        setError("The request is taking longer than expected. This can happen due to slow internet. Please try again or use the 'Cancel' button and refresh the page.");
+        setError("Login/Signup is taking too long. This usually happens due to a slow internet connection or a temporary issue with the authentication server. Please check your internet and try again.");
       }
-    }, 120000);
+    }, 45000);
 
     try {
+      console.log('Starting auth process:', authMode, cleanEmail);
       if (authMode === 'signup') {
         if (!fullName.trim() || !cleanEmail || !cleanPass || !confirmPass) {
           throw new Error('All fields are required!');
@@ -439,6 +443,7 @@ const App: React.FC = () => {
         }
 
         // 1. Sign up with Supabase Auth (This sends the email)
+        console.log('Calling supabase.auth.signUp...');
         const { data: authData, error: authError } = await supabase.auth.signUp({
           email: cleanEmail,
           password: cleanPass,
@@ -480,11 +485,12 @@ const App: React.FC = () => {
         }
 
         if (authData.user) {
+          console.log('Auth signup successful, user ID:', authData.user.id);
           const isAdmin = cleanEmail === 'lallusinghnetam0@gmail.com' || cleanEmail === '8839191411@gmail.com' || cleanEmail === 'testtrail@gmail.com';
           const newSessionId = Math.random().toString(36).substring(7);
           
           // 2. Insert into our public.users table for metadata
-          // We use a separate try-catch for the metadata insert so it doesn't block the main flow if it fails
+          console.log('Inserting user metadata...');
           try {
             const { error: insertError } = await supabase
               .from('users')
@@ -540,6 +546,7 @@ const App: React.FC = () => {
                             cleanEmail === 'testtrail@gmail.com';
 
         // Real Login with Supabase Auth
+        console.log('Calling supabase.auth.signInWithPassword...');
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
           email: cleanEmail,
           password: cleanPass,
@@ -591,6 +598,7 @@ const App: React.FC = () => {
         }
 
         if (authData.user) {
+          console.log('Auth login successful, fetching metadata...');
           const { data: userData } = await supabase
             .from('users')
             .select('*')
@@ -598,6 +606,7 @@ const App: React.FC = () => {
             .maybeSingle();
 
           if (!userData) {
+            console.log('Metadata not found, checking fallback...');
             throw new Error('User data not found in database.');
           }
 
@@ -716,7 +725,7 @@ const App: React.FC = () => {
     }
 
     setLoadingMessage('Starting your test...');
-    setIsLoading(true);
+    setIsLoadingWithRef(true);
     setError(null);
     try {
       const count = isPro ? 100 : 5;
@@ -730,7 +739,7 @@ const App: React.FC = () => {
       console.error('Test Generation Error:', err);
       setError(err.message || 'Failed to generate test. Please try again.');
     } finally {
-      setIsLoading(false);
+      setIsLoadingWithRef(false);
     }
   };
 
@@ -841,7 +850,7 @@ const App: React.FC = () => {
       return;
     }
     
-    setIsLoading(true);
+    setIsLoadingWithRef(true);
     try {
       const updatedUser = { ...currentUser, subscription: SubscriptionStatus.PENDING, utr: cleanUtr };
       
@@ -859,7 +868,7 @@ const App: React.FC = () => {
     } catch (err: any) {
       showAlert("Payment Error", "Payment failed: " + err.message);
     } finally {
-      setIsLoading(false);
+      setIsLoadingWithRef(false);
     }
   };
 
@@ -1697,7 +1706,7 @@ const App: React.FC = () => {
     };
 
     const updateConfig = async () => {
-      setIsLoading(true);
+      setIsLoadingWithRef(true);
       try {
         const { error: configError } = await supabase
           .from('config')
@@ -1711,7 +1720,7 @@ const App: React.FC = () => {
       } catch (err: any) {
         showAlert("Error", "Failed to update config: " + err.message);
       } finally {
-        setIsLoading(false);
+        setIsLoadingWithRef(false);
       }
     };
 
@@ -1720,7 +1729,7 @@ const App: React.FC = () => {
         "Clear All Data",
         "Are you sure? This will delete all users, results, and reset the app.",
         async () => {
-          setIsLoading(true);
+          setIsLoadingWithRef(true);
           try {
             await supabase.from('results').delete().neq('id', '0');
             await supabase.from('users').delete().neq('id', '0');
@@ -1729,7 +1738,7 @@ const App: React.FC = () => {
           } catch (err: any) {
             showAlert("Error", "Failed to clear data: " + err.message);
           } finally {
-            setIsLoading(false);
+            setIsLoadingWithRef(false);
           }
         }
       );
@@ -1740,7 +1749,7 @@ const App: React.FC = () => {
         "Delete User",
         "Are you sure you want to delete this user? This action cannot be undone.",
         async () => {
-          setIsLoading(true);
+          setIsLoadingWithRef(true);
           try {
             await supabase.from('results').delete().eq('user_id', userId);
             await supabase.from('users').delete().eq('id', userId);
@@ -1754,7 +1763,7 @@ const App: React.FC = () => {
           } catch (err: any) {
             showAlert("Error", "Failed to delete user: " + err.message);
           } finally {
-            setIsLoading(false);
+            setIsLoadingWithRef(false);
           }
         }
       );
@@ -2187,7 +2196,7 @@ const App: React.FC = () => {
                   </button>
                 )}
                 <button 
-                  onClick={() => setIsLoading(false)}
+                  onClick={() => setIsLoadingWithRef(false)}
                   className="px-6 py-2 bg-white/5 hover:bg-white/10 text-slate-400 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border border-white/10"
                 >
                   Cancel / Close
@@ -2197,7 +2206,7 @@ const App: React.FC = () => {
           </div>
         )}
         <footer className="py-12 px-6 border-t border-white/5 text-center text-slate-500 text-sm">
-           <p>© 2024 TestTrail. All rights reserved.</p>
+           <p>© 2024 TestTrail. v1.1 - All rights reserved.</p>
            <p className="mt-1">Handcrafted for future civil servants of India.</p>
         </footer>
       </div>
