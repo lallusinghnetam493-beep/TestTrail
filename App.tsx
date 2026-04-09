@@ -721,8 +721,12 @@ const App: React.FC = () => {
         return;
       }
     } else {
-      // For 5-Q Quick Test, we can allow it but maybe count it? 
-      // Currently it's free and unlimited in the code, but let's keep it that way unless asked.
+      // For 5-Q Quick Test, limit to 50 trials
+      if (currentUser.subscription === SubscriptionStatus.FREE && currentUser.trialsUsed >= 50) {
+        showAlert("Trial Limit Reached", "You have used your 50 free 5-question trials. Please upgrade to Pro for unlimited access.");
+        setCurrentPage('payment');
+        return;
+      }
     }
 
     if (!topic.trim()) {
@@ -1408,12 +1412,13 @@ const App: React.FC = () => {
 
               <div className="flex flex-col sm:flex-row gap-5 pt-4">
                 <button 
-                  disabled={isLoading}
+                  disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && currentUser?.trialsUsed >= 50)}
                   onClick={() => startTest(topic, false, testLanguage, testDifficulty)}
                   className="flex-1 py-5 glass hover:bg-white/10 rounded-2xl font-black text-slate-300 border border-white/10 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
                 >
                   {isLoading ? <Loader2 className="animate-spin" /> : <Zap size={20} />}
-                  {isLoading ? 'Generating...' : `5-Q Quick Test`}
+                  {isLoading ? 'Generating...' : 
+                   (currentUser?.subscription === SubscriptionStatus.FREE ? `5-Q Quick Test (${Math.max(0, 50 - (currentUser?.trialsUsed || 0))} left)` : `5-Q Quick Test`)}
                 </button>
                 <button 
                   disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && currentUser?.trialsUsed >= 1)}
