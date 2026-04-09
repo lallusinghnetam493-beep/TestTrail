@@ -471,51 +471,50 @@ const App: React.FC = () => {
           const isAdmin = cleanEmail === 'lallusinghnetam0@gmail.com' || cleanEmail === '8839191411@gmail.com' || cleanEmail === 'testtrail@gmail.com';
           const newSessionId = Math.random().toString(36).substring(7);
           
-          // 2. Insert into our public.users table
-          console.log('Inserting user metadata...');
-          try {
-            const { error: insertError } = await withTimeout(supabase
-              .from('users')
-              .insert([{
-                id: authData.user.id,
-                full_name: fullName.trim(),
-                email: cleanEmail,
-                password: cleanPass, 
-                subscription: isAdmin ? SubscriptionStatus.PRO : SubscriptionStatus.FREE,
-                trials_used: 0,
-                is_admin: isAdmin,
-                session_id: newSessionId
-              }]));
-
-            if (insertError) {
-              console.error('Metadata insert error:', insertError);
-              // Try a simple update if insert failed (user might already exist in table)
-              await withTimeout(supabase.from('users').update({ session_id: newSessionId }).eq('id', authData.user.id));
-            }
-          } catch (metadataErr) {
-            console.error('Metadata insert exception:', metadataErr);
-          }
+          const formattedUser: User = {
+            id: authData.user.id,
+            fullName: fullName.trim(),
+            email: cleanEmail,
+            password: cleanPass,
+            subscription: isAdmin ? SubscriptionStatus.PRO : SubscriptionStatus.FREE,
+            trialsUsed: 0,
+            isAdmin: isAdmin,
+            utr: '',
+            sessionId: newSessionId
+          };
 
           if (authData.session) {
-            const formattedUser: User = {
-              id: authData.user.id,
-              fullName: fullName.trim(),
-              email: cleanEmail,
-              password: cleanPass,
-              subscription: isAdmin ? SubscriptionStatus.PRO : SubscriptionStatus.FREE,
-              trialsUsed: 0,
-              isAdmin: isAdmin,
-              utr: '',
-              sessionId: newSessionId
-            };
-
+            // TURANT LOGIN: Set user and navigate immediately
             setCurrentUser(formattedUser);
             localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
             setCurrentPage(isAdmin ? 'admin' : 'dashboard');
+            setIsLoadingWithRef(false); // Stop loading early
+            clearTimeout(authTimeout);
           } else {
             setSuccessMessage("Account created! Please check your email for a confirmation link to login.");
             setAuthMode('login');
           }
+
+          // Background sync: Insert into our public.users table
+          console.log('Syncing user metadata in background...');
+          supabase.from('users').insert([{
+            id: authData.user.id,
+            full_name: fullName.trim(),
+            email: cleanEmail,
+            password: cleanPass, 
+            subscription: isAdmin ? SubscriptionStatus.PRO : SubscriptionStatus.FREE,
+            trials_used: 0,
+            is_admin: isAdmin,
+            session_id: newSessionId
+          }]).then(({ error }) => {
+            if (error) {
+              console.error('Background metadata sync failed:', error);
+              // Retry with update if insert failed
+              supabase.from('users').update({ session_id: newSessionId }).eq('id', authData.user.id);
+            }
+          });
+          
+          if (authData.session) return; // Exit handleAuth early since we already navigated
         }
       } else {
         // Real Login with Supabase Auth
@@ -548,11 +547,15 @@ const App: React.FC = () => {
               sessionId: newSessionId
             };
 
-            await withTimeout(supabase.from('users').update({ session_id: newSessionId }).eq('id', userData.id));
-
+            // TURANT LOGIN: Set user and navigate
             localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
             setCurrentUser(formattedUser);
             setCurrentPage(isAdmin ? 'admin' : 'dashboard');
+            setIsLoadingWithRef(false);
+            clearTimeout(authTimeout);
+
+            // Background sync
+            supabase.from('users').update({ session_id: newSessionId }).eq('id', userData.id).then(() => {});
             return;
           }
           
@@ -567,37 +570,55 @@ const App: React.FC = () => {
         }
 
         if (authData.user) {
-          console.log('Auth login successful, fetching metadata...');
+          console.log('Auth login successful, user ID:', authData.user.id);
           const isAdmin = cleanEmail === 'lallusinghnetam0@gmail.com' || cleanEmail === '8839191411@gmail.com' || cleanEmail === 'testtrail@gmail.com';
           const newSessionId = Math.random().toString(36).substring(7);
 
-          const { data: userData, error: updateError } = await withTimeout(supabase
+          // Construct user object from auth data for immediate navigation
+          const immediateUser: User = {
+            id: authData.user.id,
+            fullName: authData.user.user_metadata?.full_name || 'User',
+            email: authData.user.email || '',
+            subscription: isAdmin ? SubscriptionStatus.PRO : SubscriptionStatus.FREE,
+            trialsUsed: 0,
+            isAdmin: isAdmin,
+            sessionId: newSessionId
+          };
+
+          // TURANT LOGIN: Navigate immediately
+          localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(immediateUser));
+          setCurrentUser(immediateUser);
+          setCurrentPage(isAdmin ? 'admin' : 'dashboard');
+          setIsLoadingWithRef(false);
+          clearTimeout(authTimeout);
+
+          // Background sync: Fetch full metadata and update session
+          console.log('Syncing full metadata in background...');
+          supabase
             .from('users')
             .update({ session_id: newSessionId })
             .eq('id', authData.user.id)
             .select()
-            .maybeSingle());
-
-          if (!userData || updateError) {
-            console.log('Metadata sync failed, checking fallback...');
-            throw new Error('User data synchronization failed. Please try again.');
-          }
-
-          const updatedUser: User = {
-            id: userData.id,
-            fullName: userData.full_name,
-            email: userData.email,
-            password: userData.password,
-            subscription: userData.subscription as SubscriptionStatus,
-            trialsUsed: userData.trials_used,
-            isAdmin: isAdmin,
-            utr: userData.utr,
-            sessionId: newSessionId
-          };
-
-          localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
-          setCurrentUser(updatedUser);
-          setCurrentPage(isAdmin ? 'admin' : 'dashboard');
+            .maybeSingle()
+            .then(({ data: userData }) => {
+              if (userData) {
+                const fullUser: User = {
+                  id: userData.id,
+                  fullName: userData.full_name,
+                  email: userData.email,
+                  password: userData.password,
+                  subscription: userData.subscription as SubscriptionStatus,
+                  trialsUsed: userData.trials_used,
+                  isAdmin: isAdmin,
+                  utr: userData.utr,
+                  sessionId: newSessionId
+                };
+                localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(fullUser));
+                setCurrentUser(fullUser);
+              }
+            });
+          
+          return;
         }
       }
     } catch (err: any) {
