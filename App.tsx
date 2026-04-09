@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Trophy, 
@@ -87,6 +87,7 @@ const App: React.FC = () => {
   const [testLanguage, setTestLanguage] = useState<'English' | 'Hindi'>('English');
   const [testDifficulty, setTestDifficulty] = useState<Difficulty>('Medium');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const loadingRef = useRef(false);
   const [modal, setModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -121,17 +122,30 @@ const App: React.FC = () => {
   const [timeLeft, setTimeLeft] = useState(0);
   const [lastResult, setLastResult] = useState<TestResult | null>(null);
 
+  const setIsLoadingWithRef = (val: boolean) => {
+    loadingRef.current = val;
+    setIsLoading(val);
+  };
+
   // --- Auth & Persistence Initialization ---
   useEffect(() => {
+    // Safety timeout to ensure loading screen doesn't stay forever
+    const timer = setTimeout(() => {
+      if (loadingRef.current) {
+        setIsLoadingWithRef(false);
+      }
+    }, 30000); // Increased to 30 seconds for slow connections
+
     const initApp = async () => {
       setLoadingMessage('Loading App...');
-      setIsLoading(true);
+      setIsLoadingWithRef(true);
       
       // Check if Supabase is configured
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL;
       if (!supabaseUrl || supabaseUrl === 'https://placeholder-url.supabase.co') {
         setError('Supabase is not configured. Please add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your environment variables and redeploy.');
-        setIsLoading(false);
+        setIsLoadingWithRef(false);
+        clearTimeout(timer);
         return;
       }
 
@@ -219,16 +233,12 @@ const App: React.FC = () => {
         console.error('Error initializing app:', err);
         setError('Failed to initialize app. Please check your connection.');
       } finally {
-        setIsLoading(false);
+        clearTimeout(timer);
+        setIsLoadingWithRef(false);
       }
     };
 
     initApp();
-
-    // Safety timeout to ensure loading screen doesn't stay forever
-    const timer = setTimeout(() => {
-      setIsLoading(false);
-    }, 10000); // 10 seconds max loading
 
     // 3. Handle Auth State Changes & Email Confirmation Redirects
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -401,16 +411,18 @@ const App: React.FC = () => {
     setError(null);
     setSuccessMessage(null);
     setLoadingMessage(authMode === 'login' ? 'Logging in...' : 'Creating Account...');
-    setIsLoading(true);
+    setIsLoadingWithRef(true);
 
     const cleanEmail = email.trim().toLowerCase();
     const cleanPass = pass.trim();
 
-    // Safety timeout - increased to 60s for slow connections
+    // Safety timeout - increased to 120s for very slow connections
     const authTimeout = setTimeout(() => {
-      setIsLoading(false);
-      setError("The request is taking longer than expected. This can happen due to slow internet. Please try again or use the 'Cancel' button and refresh the page.");
-    }, 60000);
+      if (loadingRef.current) {
+        setIsLoadingWithRef(false);
+        setError("The request is taking longer than expected. This can happen due to slow internet. Please try again or use the 'Cancel' button and refresh the page.");
+      }
+    }, 120000);
 
     try {
       if (authMode === 'signup') {
@@ -469,6 +481,7 @@ const App: React.FC = () => {
 
         if (authData.user) {
           const isAdmin = cleanEmail === 'lallusinghnetam0@gmail.com' || cleanEmail === '8839191411@gmail.com' || cleanEmail === 'testtrail@gmail.com';
+          const newSessionId = Math.random().toString(36).substring(7);
           
           // 2. Insert into our public.users table for metadata
           // We use a separate try-catch for the metadata insert so it doesn't block the main flow if it fails
@@ -482,12 +495,15 @@ const App: React.FC = () => {
                 password: cleanPass, // Keeping for admin view as requested before
                 subscription: isAdmin ? SubscriptionStatus.PRO : SubscriptionStatus.FREE,
                 trials_used: 0,
-                is_admin: isAdmin
+                is_admin: isAdmin,
+                session_id: newSessionId
               }]);
 
             if (insertError) {
               console.error('Metadata insert error:', insertError);
               // If it's a duplicate key error, it means the user already exists in the table, which is fine
+              // But we still want to update the session_id if it exists
+              await supabase.from('users').update({ session_id: newSessionId }).eq('id', authData.user.id);
             }
           } catch (metadataErr) {
             console.error('Metadata insert exception:', metadataErr);
@@ -495,7 +511,6 @@ const App: React.FC = () => {
 
           if (authData.session) {
             // Direct login if Supabase allows it (Confirm Email is OFF)
-            const newSessionId = Math.random().toString(36).substring(7);
             const formattedUser: User = {
               id: authData.user.id,
               fullName: fullName.trim(),
@@ -507,9 +522,6 @@ const App: React.FC = () => {
               utr: '',
               sessionId: newSessionId
             };
-
-            // Update session_id in DB
-            await supabase.from('users').update({ session_id: newSessionId }).eq('id', authData.user.id);
 
             setCurrentUser(formattedUser);
             localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
@@ -617,7 +629,7 @@ const App: React.FC = () => {
       setError(err.message || 'Authentication failed. Please check your connection.');
     } finally {
       clearTimeout(authTimeout);
-      setIsLoading(false);
+      setIsLoadingWithRef(false);
     }
   };
 
@@ -625,9 +637,17 @@ const App: React.FC = () => {
     setError(null);
     setSuccessMessage(null);
     setLoadingMessage('Resetting Password...');
-    setIsLoading(true);
+    setIsLoadingWithRef(true);
     const cleanEmail = email.trim().toLowerCase();
     const cleanPass = newPass.trim();
+
+    // Safety timeout
+    const resetTimeout = setTimeout(() => {
+      if (loadingRef.current) {
+        setIsLoadingWithRef(false);
+        setError("The request is taking longer than expected. Please check your connection.");
+      }
+    }, 60000);
 
     try {
       if (!cleanEmail || !cleanPass || !confirmPass) {
@@ -659,7 +679,8 @@ const App: React.FC = () => {
     } catch (err: any) {
       setError(err.message);
     } finally {
-      setIsLoading(false);
+      clearTimeout(resetTimeout);
+      setIsLoadingWithRef(false);
     }
   };
 
@@ -844,7 +865,7 @@ const App: React.FC = () => {
 
   // --- Admin Handlers ---
   const approvePayment = async (userId: string) => {
-    setIsLoading(true);
+    setIsLoadingWithRef(true);
     try {
       const { error: updateError } = await supabase
         .from('users')
@@ -870,7 +891,7 @@ const App: React.FC = () => {
     } catch (err: any) {
       showAlert("Error", "Approval failed: " + err.message);
     } finally {
-      setIsLoading(false);
+      setIsLoadingWithRef(false);
     }
   };
 
