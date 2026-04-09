@@ -137,8 +137,6 @@ const App: React.FC = () => {
     }, 30000); // Increased to 30 seconds for slow connections
 
     const initApp = async () => {
-      setLoadingMessage('Please wait...');
-      setIsLoadingWithRef(true);
       console.log('Initializing app...');
       
       // Check if Supabase is configured
@@ -188,13 +186,6 @@ const App: React.FC = () => {
             utr: latestUser.utr,
             sessionId: latestUser.session_id
           };
-
-          // Single Device Check
-          if (parsedUser.sessionId && latestUser.session_id && parsedUser.sessionId !== latestUser.session_id) {
-            showAlert("Logged Out", "You have been logged in on another device. Please login again.");
-            handleLogout();
-            return;
-          }
 
           setCurrentUser(formattedUser);
           localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
@@ -318,27 +309,6 @@ const App: React.FC = () => {
       clearTimeout(timer);
     };
   }, []);
-
-  // --- Single Device Session Check ---
-  useEffect(() => {
-    if (!currentUser || !currentUser.sessionId) return;
-
-    const checkSession = async () => {
-      const { data: latestUser } = await supabase
-        .from('users')
-        .select('session_id')
-        .eq('id', currentUser.id)
-        .maybeSingle();
-
-      if (latestUser && latestUser.session_id && latestUser.session_id !== currentUser.sessionId) {
-        showAlert("Logged Out", "You have been logged in on another device. Please login again.");
-        handleLogout();
-      }
-    };
-
-    const interval = setInterval(checkSession, 15000); // Check every 15 seconds
-    return () => clearInterval(interval);
-  }, [currentUser]);
 
   // --- Scroll to top on page change ---
   useEffect(() => {
@@ -2186,7 +2156,7 @@ const App: React.FC = () => {
             </motion.div>
           </AnimatePresence>
         </main>
-        {isLoading && currentPage !== 'auth' && (
+        {isLoading && currentPage !== 'auth' && currentPage !== 'home' && (
           <div className="fixed inset-0 z-[100] bg-slate-950/60 flex flex-col items-center justify-center space-y-4">
             <div className="w-16 h-16 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
             <div className="text-center px-6">
