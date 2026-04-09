@@ -540,10 +540,9 @@ const App: React.FC = () => {
             setCurrentUser(formattedUser);
             localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
             setCurrentPage(isAdmin ? 'admin' : 'dashboard');
-            showAlert("Success", "Account created successfully!");
           } else {
             // If session is null, email confirmation is likely ON in Supabase
-            showAlert("Success", "Account created! You can now login. (Note: If you receive a confirmation email, please disable 'Confirm email' in your Supabase Dashboard -> Authentication -> Settings to allow direct login).");
+            setSuccessMessage("Account created! Please check your email for a confirmation link to login.");
             setAuthMode('login');
           }
         }
@@ -591,7 +590,6 @@ const App: React.FC = () => {
             setCurrentUser(formattedUser);
             
             setCurrentPage(isAdmin ? 'admin' : 'dashboard');
-            showAlert("Login Success", "Logged in successfully via secure backup.");
             return;
           }
           
@@ -2183,7 +2181,7 @@ const App: React.FC = () => {
             </motion.div>
           </AnimatePresence>
         </main>
-        {isLoading && (
+        {isLoading && currentPage !== 'auth' && (
           <div className="fixed inset-0 z-[100] bg-slate-950/60 flex flex-col items-center justify-center space-y-4">
             <div className="w-16 h-16 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
             <div className="text-center px-6">
