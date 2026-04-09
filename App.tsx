@@ -396,14 +396,22 @@ const App: React.FC = () => {
     const cleanEmail = email.trim().toLowerCase();
     const cleanPass = pass.trim();
 
-    // Safety timeout - increased to 120s to handle Supabase "cold starts" (paused projects)
+    // Safety timeout - reduced to 60s for better UX, with clearer guidance
     const authTimeout = setTimeout(() => {
       if (loadingRef.current) {
-        console.log('Auth timeout reached (120s)');
+        console.log('Auth timeout reached (60s)');
         setIsLoadingWithRef(false);
-        setError("The authentication server is taking too long to respond. This can happen if the database is 'waking up' from a paused state or if there is a network block. Please wait 30 seconds and try again. If you are signing up, check if you received a confirmation email.");
+        setError("The server is taking too long to respond. This usually happens if the database is 'waking up' from a sleep state. Please wait 10 seconds and try again. If you are signing up, please also check your email inbox.");
       }
-    }, 120000);
+    }, 60000);
+
+    // Helper to wrap supabase calls with a timeout
+    async function withTimeout<T>(promise: Promise<T> | PromiseLike<T>, timeoutMs: number = 55000): Promise<T> {
+      const timeoutPromise = new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('Network timeout: The server is not responding. Please try again.')), timeoutMs)
+      );
+      return Promise.race([promise, timeoutPromise]);
+    }
 
     try {
       console.log('Starting auth process:', authMode, cleanEmail);
@@ -420,9 +428,9 @@ const App: React.FC = () => {
           throw new Error('Please enter a valid email address!');
         }
 
-        // 1. Sign up with Supabase Auth (This sends the email)
+        // 1. Sign up with Supabase Auth
         console.log('Calling supabase.auth.signUp...');
-        const { data: authData, error: authError } = await supabase.auth.signUp({
+        const { data: authData, error: authError } = await withTimeout(supabase.auth.signUp({
           email: cleanEmail,
           password: cleanPass,
           options: {
@@ -430,33 +438,29 @@ const App: React.FC = () => {
               full_name: fullName.trim(),
             }
           }
-        });
+        }));
 
         if (authError) {
           if (authError.message.includes('User already registered')) {
             const isAdmin = cleanEmail === 'lallusinghnetam0@gmail.com' || cleanEmail === '8839191411@gmail.com' || cleanEmail === 'testtrail@gmail.com';
             
-            // Allow users to "sync" their password to our users table
-            // This is a fail-safe for when Supabase Auth is out of sync or email confirmation is stuck.
-            const { data: existingUser } = await supabase
+            const { data: existingUser } = await withTimeout(supabase
               .from('users')
               .select('id')
               .eq('email', cleanEmail)
-              .maybeSingle();
+              .maybeSingle());
 
             if (existingUser) {
-              await supabase
+              await withTimeout(supabase
                 .from('users')
                 .update({ password: cleanPass, full_name: fullName.trim() })
-                .eq('id', existingUser.id);
+                .eq('id', existingUser.id));
               
               showAlert("Account Sync", "This email is already registered. We have updated your login record with the password you just entered. Please try logging in now.");
               setAuthMode('login');
               return;
             } else {
-              // If they are in Auth but not in our users table, we can't easily get their ID here
-              // without a session. But we can tell them to use "Forgot Password" or try logging in.
-              throw new Error('This email is already registered in our system. Please try logging in or use "Forgot Password".');
+              throw new Error('This email is already registered. Please try logging in or use "Forgot Password".');
             }
           }
           throw authError;
@@ -467,10 +471,10 @@ const App: React.FC = () => {
           const isAdmin = cleanEmail === 'lallusinghnetam0@gmail.com' || cleanEmail === '8839191411@gmail.com' || cleanEmail === 'testtrail@gmail.com';
           const newSessionId = Math.random().toString(36).substring(7);
           
-          // 2. Insert into our public.users table for metadata
+          // 2. Insert into our public.users table
           console.log('Inserting user metadata...');
           try {
-            const { data: userData, error: insertError } = await supabase
+            const { error: insertError } = await withTimeout(supabase
               .from('users')
               .insert([{
                 id: authData.user.id,
@@ -481,20 +485,18 @@ const App: React.FC = () => {
                 trials_used: 0,
                 is_admin: isAdmin,
                 session_id: newSessionId
-              }])
-              .select()
-              .single();
+              }]));
 
             if (insertError) {
               console.error('Metadata insert error:', insertError);
-              await supabase.from('users').update({ session_id: newSessionId }).eq('id', authData.user.id);
+              // Try a simple update if insert failed (user might already exist in table)
+              await withTimeout(supabase.from('users').update({ session_id: newSessionId }).eq('id', authData.user.id));
             }
           } catch (metadataErr) {
             console.error('Metadata insert exception:', metadataErr);
           }
 
           if (authData.session) {
-            // Direct login if Supabase allows it (Confirm Email is OFF)
             const formattedUser: User = {
               id: authData.user.id,
               fullName: fullName.trim(),
@@ -511,32 +513,25 @@ const App: React.FC = () => {
             localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
             setCurrentPage(isAdmin ? 'admin' : 'dashboard');
           } else {
-            // If session is null, email confirmation is likely ON in Supabase
             setSuccessMessage("Account created! Please check your email for a confirmation link to login.");
             setAuthMode('login');
           }
         }
       } else {
-        // Special case for admin login fallback
-        const isAdminEmail = cleanEmail === 'lallusinghnetam0@gmail.com' || 
-                            cleanEmail === '8839191411@gmail.com' || 
-                            cleanEmail === 'testtrail@gmail.com';
-
         // Real Login with Supabase Auth
         console.log('Calling supabase.auth.signInWithPassword...');
-        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        const { data: authData, error: authError } = await withTimeout(supabase.auth.signInWithPassword({
           email: cleanEmail,
           password: cleanPass,
-        });
+        }));
 
         if (authError) {
           // Universal Fallback: Check our 'users' table if Supabase Auth fails
-          // This helps if email confirmation is stuck or if there's a sync issue
-          const { data: userData } = await supabase
+          const { data: userData } = await withTimeout(supabase
             .from('users')
             .select('*')
             .eq('email', cleanEmail)
-            .maybeSingle();
+            .maybeSingle());
           
           if (userData && userData.password === cleanPass) {
             const isAdmin = userData.is_admin || cleanEmail === 'lallusinghnetam0@gmail.com' || cleanEmail === '8839191411@gmail.com' || cleanEmail === 'testtrail@gmail.com';
@@ -553,12 +548,10 @@ const App: React.FC = () => {
               sessionId: newSessionId
             };
 
-            // Update session_id in DB
-            await supabase.from('users').update({ session_id: newSessionId }).eq('id', userData.id);
+            await withTimeout(supabase.from('users').update({ session_id: newSessionId }).eq('id', userData.id));
 
             localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
             setCurrentUser(formattedUser);
-            
             setCurrentPage(isAdmin ? 'admin' : 'dashboard');
             return;
           }
@@ -578,13 +571,12 @@ const App: React.FC = () => {
           const isAdmin = cleanEmail === 'lallusinghnetam0@gmail.com' || cleanEmail === '8839191411@gmail.com' || cleanEmail === 'testtrail@gmail.com';
           const newSessionId = Math.random().toString(36).substring(7);
 
-          // Combine Select and Update into one round trip
-          const { data: userData, error: updateError } = await supabase
+          const { data: userData, error: updateError } = await withTimeout(supabase
             .from('users')
             .update({ session_id: newSessionId })
             .eq('id', authData.user.id)
             .select()
-            .maybeSingle();
+            .maybeSingle());
 
           if (!userData || updateError) {
             console.log('Metadata sync failed, checking fallback...');
@@ -605,7 +597,6 @@ const App: React.FC = () => {
 
           localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
           setCurrentUser(updatedUser);
-          
           setCurrentPage(isAdmin ? 'admin' : 'dashboard');
         }
       }
