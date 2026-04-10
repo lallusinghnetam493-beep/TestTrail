@@ -1,0 +1,62 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Application user profile and subscription data",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Firebase Auth UID" },
+        "fullName": { "type": "string" },
+        "email": { "type": "string" },
+        "password": { "type": "string", "description": "Stored for fallback (not recommended for production but kept for migration consistency)" },
+        "subscription": { "type": "string", "enum": ["FREE", "PRO", "PENDING"] },
+        "trialsUsed": { "type": "number" },
+        "isAdmin": { "type": "boolean" },
+        "utr": { "type": "string" },
+        "sessionId": { "type": "string" }
+      },
+      "required": ["id", "email", "subscription"]
+    },
+    "TestResult": {
+      "title": "TestResult",
+      "description": "User test performance data",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "examName": { "type": "string" },
+        "score": { "type": "number" },
+        "total": { "type": "number" },
+        "correct": { "type": "number" },
+        "wrong": { "type": "number" },
+        "percentage": { "type": "number" },
+        "date": { "type": "string", "format": "date-time" },
+        "questions": { "type": "string", "description": "JSON string of questions" },
+        "userAnswers": { "type": "string", "description": "JSON string of answers" }
+      },
+      "required": ["userId", "examName", "score", "total"]
+    },
+    "Config": {
+      "title": "AppConfig",
+      "description": "Global application configuration",
+      "type": "object",
+      "properties": {
+        "upiId": { "type": "string" },
+        "subscriptionPrice": { "type": "number" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/results/{resultId}": {
+      "schema": "TestResult",
+      "description": "Test history"
+    },
+    "/config/global": {
+      "schema": "Config",
+      "description": "Global app settings"
+    }
+  }
+}
