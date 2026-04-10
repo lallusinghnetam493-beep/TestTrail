@@ -5,6 +5,7 @@ import Razorpay from "razorpay";
 import crypto from "crypto";
 import fs from "fs";
 import admin from "firebase-admin";
+import { getFirestore } from "firebase-admin/firestore";
 
 // Load firebase config
 let firebaseConfig: any = {};
@@ -15,12 +16,22 @@ try {
 }
 
 // Initialize Firebase Admin
-if (!admin.apps.length && firebaseConfig.projectId) {
-  admin.initializeApp({
-    projectId: firebaseConfig.projectId,
-  });
+let firestore: any;
+if (firebaseConfig.projectId) {
+  if (!admin.apps.length) {
+    admin.initializeApp({
+      projectId: firebaseConfig.projectId,
+    });
+  }
+  // Use the named database if provided
+  if (firebaseConfig.firestoreDatabaseId) {
+    firestore = getFirestore(admin.app(), firebaseConfig.firestoreDatabaseId);
+  } else {
+    firestore = getFirestore();
+  }
+} else {
+  console.error("Firebase Project ID missing.");
 }
-const firestore = admin.firestore();
 
 async function startServer() {
   const app = express();
@@ -29,9 +40,15 @@ async function startServer() {
   app.use(cors());
   app.use(express.json());
 
+  // Log all API requests for debugging
+  app.use("/api", (req, res, next) => {
+    console.log(`API Request: ${req.method} ${req.url}`);
+    next();
+  });
+
   const razorpay = new Razorpay({
-    key_id: process.env.VITE_RAZORPAY_KEY_ID || "",
-    key_secret: process.env.RAZORPAY_KEY_SECRET || "",
+    key_id: process.env.VITE_RAZORPAY_KEY_ID || "MISSING_KEY_ID",
+    key_secret: process.env.RAZORPAY_KEY_SECRET || "MISSING_KEY_SECRET",
   });
 
   // API Routes
@@ -48,6 +65,13 @@ async function startServer() {
         return res.status(400).json({ error: "Amount is required" });
       }
 
+      if (process.env.VITE_RAZORPAY_KEY_ID === undefined || process.env.RAZORPAY_KEY_SECRET === undefined) {
+        return res.status(500).json({ 
+          error: "Razorpay API keys are not configured in environment variables.",
+          details: "Please add VITE_RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to your environment."
+        });
+      }
+
       const options = {
         amount: Math.round(amount * 100), 
         currency,
@@ -56,9 +80,12 @@ async function startServer() {
 
       const order = await razorpay.orders.create(options);
       res.json(order);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Razorpay Order Error:", error);
-      res.status(500).json({ error: "Failed to create order" });
+      res.status(500).json({ 
+        error: "Failed to create Razorpay order", 
+        details: error.message || String(error) 
+      });
     }
   });
 
@@ -76,9 +103,13 @@ async function startServer() {
         return res.status(400).json({ error: "User ID is required" });
       }
 
+      if (!process.env.RAZORPAY_KEY_SECRET) {
+        return res.status(500).json({ error: "Razorpay Key Secret is missing" });
+      }
+
       const sign = razorpay_order_id + "|" + razorpay_payment_id;
       const expectedSign = crypto
-        .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET || "")
+        .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
         .update(sign.toString())
         .digest("hex");
 
@@ -94,10 +125,18 @@ async function startServer() {
       } else {
         res.status(400).json({ status: "failure", message: "Invalid signature" });
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Razorpay Verification Error:", error);
-      res.status(500).json({ error: "Internal server error" });
+      res.status(500).json({ 
+        error: "Internal server error during verification",
+        details: error.message || String(error)
+      });
     }
+  });
+
+  // API 404 Handler - MUST be before Vite middleware
+  app.use("/api/*all", (req, res) => {
+    res.status(404).json({ error: `API route not found: ${req.originalUrl}` });
   });
 
   // Vite middleware for development
@@ -111,7 +150,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    app.get('*all', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
