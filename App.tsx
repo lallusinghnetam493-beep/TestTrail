@@ -47,6 +47,7 @@ import { generateQuestions } from './services/geminiService';
 import { auth, db } from './firebase';
 import PrivacyPolicy from './components/PrivacyPolicy';
 import TermsAndConditions from './components/TermsAndConditions';
+import ContactUs from './components/ContactUs';
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
@@ -147,7 +148,7 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 
 const App: React.FC = () => {
   // --- State ---
-  const [currentPage, setCurrentPage] = useState<'home' | 'auth' | 'dashboard' | 'payment' | 'test' | 'result' | 'admin' | 'profile' | 'privacy' | 'terms'>('home');
+  const [currentPage, setCurrentPage] = useState<'home' | 'auth' | 'dashboard' | 'payment' | 'test' | 'result' | 'admin' | 'profile' | 'privacy' | 'terms' | 'contact'>('home');
   const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot'>('login');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -1982,6 +1983,7 @@ const App: React.FC = () => {
               {currentPage === 'profile' && <ProfilePage />}
               {currentPage === 'privacy' && <PrivacyPolicy onBack={() => setCurrentPage('home')} />}
               {currentPage === 'terms' && <TermsAndConditions onBack={() => setCurrentPage('home')} />}
+              {currentPage === 'contact' && <ContactUs onBack={() => setCurrentPage('home')} />}
             </motion.div>
           </AnimatePresence>
         </main>
@@ -2027,6 +2029,12 @@ const App: React.FC = () => {
                className="hover:text-indigo-400 transition-colors font-medium"
              >
                Terms & Conditions
+             </button>
+             <button 
+               onClick={() => setCurrentPage('contact')}
+               className="hover:text-indigo-400 transition-colors font-medium"
+             >
+               Contact Us
              </button>
            </div>
         </footer>
