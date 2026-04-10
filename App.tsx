@@ -45,6 +45,7 @@ import {
 } from './types';
 import { generateQuestions } from './services/geminiService';
 import { auth, db } from './firebase';
+import { BrowserRouter, Routes, Route, useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
 import PrivacyPolicy from './components/PrivacyPolicy';
 import TermsAndConditions from './components/TermsAndConditions';
 import ContactUs from './components/ContactUs';
@@ -147,8 +148,18 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
 }
 
 const App: React.FC = () => {
+  return (
+    <BrowserRouter>
+      <AppContent />
+    </BrowserRouter>
+  );
+};
+
+const AppContent: React.FC = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
+
   // --- State ---
-  const [currentPage, setCurrentPage] = useState<'home' | 'auth' | 'dashboard' | 'payment' | 'test' | 'result' | 'admin' | 'profile' | 'privacy' | 'terms' | 'contact'>('home');
   const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot'>('login');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [users, setUsers] = useState<User[]>([]);
@@ -299,8 +310,8 @@ const App: React.FC = () => {
             localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
             
             // Auto-navigate if on auth/home
-            if (currentPage === 'auth' || currentPage === 'home') {
-              setCurrentPage(formattedUser.isAdmin ? 'admin' : 'dashboard');
+            if (location.pathname === '/auth' || location.pathname === '/') {
+              navigate(formattedUser.isAdmin ? '/admin' : '/dashboard');
             }
           } else {
             // Fallback if doc doesn't exist yet (e.g. during signup sync)
@@ -321,8 +332,8 @@ const App: React.FC = () => {
       } else {
         setCurrentUser(null);
         localStorage.removeItem(CURRENT_USER_KEY);
-        if (currentPage !== 'home' && currentPage !== 'auth') {
-          setCurrentPage('home');
+        if (location.pathname !== '/' && location.pathname !== '/auth') {
+          navigate('/');
         }
       }
     });
@@ -360,11 +371,11 @@ const App: React.FC = () => {
   // --- Scroll to top on page change ---
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [currentPage]);
+  }, [location.pathname]);
 
   // --- Admin User Loading ---
   useEffect(() => {
-    if (currentPage === 'admin' && currentUser?.isAdmin) {
+    if (location.pathname === '/admin' && currentUser?.isAdmin) {
       const q = query(collection(db, 'users'), orderBy('email'));
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const usersList = snapshot.docs.map(doc => ({
@@ -377,7 +388,7 @@ const App: React.FC = () => {
       });
       return () => unsubscribe();
     }
-  }, [currentPage, currentUser]);
+  }, [location.pathname, currentUser]);
 
   // --- Firebase Auth Handlers ---
   const handleAuth = async (fullName: string, email: string, pass: string, confirmPass?: string) => {
@@ -430,7 +441,7 @@ const App: React.FC = () => {
         // TURANT LOGIN: Set state and navigate
         setCurrentUser(formattedUser);
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
-        setCurrentPage(isAdmin ? 'admin' : 'dashboard');
+        navigate(isAdmin ? '/admin' : '/dashboard');
         setIsLoadingWithRef(false);
         clearTimeout(authTimeout);
 
@@ -458,7 +469,7 @@ const App: React.FC = () => {
 
         setCurrentUser(immediateUser);
         localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(immediateUser));
-        setCurrentPage(isAdmin ? 'admin' : 'dashboard');
+        navigate(isAdmin ? '/admin' : '/dashboard');
         setIsLoadingWithRef(false);
         clearTimeout(authTimeout);
 
@@ -498,7 +509,7 @@ const App: React.FC = () => {
     localStorage.removeItem(RESULTS_KEY);
     localStorage.removeItem(USERS_KEY);
     setCurrentUser(null);
-    setCurrentPage('home');
+    navigate('/');
     try {
       await signOut(auth);
     } catch (err) {
@@ -518,14 +529,14 @@ const App: React.FC = () => {
       }
       if (currentUser.subscription === SubscriptionStatus.FREE && currentUser.trialsUsed >= 1) {
         showAlert("Trial Limit Reached", "You have used your 1 free 100-question trial. Please upgrade to Pro for unlimited access.");
-        setCurrentPage('payment');
+        navigate('/payment');
         return;
       }
     } else {
       // For 5-Q Quick Test, limit to 50 trials
       if (currentUser.subscription === SubscriptionStatus.FREE && currentUser.trialsUsed >= 50) {
         showAlert("Trial Limit Reached", "You have used your 50 free 5-question trials. Please upgrade to Pro for unlimited access.");
-        setCurrentPage('payment');
+        navigate('/payment');
         return;
       }
     }
@@ -545,7 +556,7 @@ const App: React.FC = () => {
       setUserAnswers(new Array(questions.length).fill(-1));
       setActiveQuestionIndex(0);
       setTimeLeft(isPro ? 50 * 60 : 0);
-      setCurrentPage('test');
+      navigate('/test');
     } catch (err: any) {
       console.error('Test Generation Error:', err);
       setError(err.message || 'Failed to generate test. Please try again.');
@@ -610,7 +621,7 @@ const App: React.FC = () => {
       }
 
       setLastResult(result);
-      setCurrentPage('result');
+      navigate('/result');
       setCurrentTest(null);
     } catch (err) {
       console.error('Error saving test result:', err);
@@ -621,7 +632,7 @@ const App: React.FC = () => {
   // Timer Effect
   useEffect(() => {
     let interval: any;
-    if (currentPage === 'test' && currentTest?.isPro && timeLeft > 0) {
+    if (location.pathname === '/test' && currentTest?.isPro && timeLeft > 0) {
       interval = setInterval(() => {
         setTimeLeft(prev => {
           if (prev <= 1) {
@@ -634,7 +645,7 @@ const App: React.FC = () => {
       }, 1000);
     }
     return () => clearInterval(interval);
-  }, [currentPage, currentTest, timeLeft, submitTest]);
+  }, [location.pathname, currentTest, timeLeft, submitTest]);
 
   // --- Payment Handler ---
   const handleRazorpayPayment = async () => {
@@ -695,7 +706,7 @@ const App: React.FC = () => {
               setCurrentUser(updatedUser);
               localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
               showAlert("Success", "Welcome to Pro! Your subscription is now active.");
-              setCurrentPage('dashboard');
+              navigate('/dashboard');
             } else {
               showAlert("Payment Verification Failed", verifyData.message || "Could not verify payment.");
             }
@@ -757,9 +768,9 @@ const App: React.FC = () => {
   // --- UI Components ---
   const Navbar = () => (
     <nav className="fixed top-0 left-0 right-0 z-50 glass h-20 px-6 flex items-center justify-between border-b border-white/10">
-      <div 
+      <Link 
+        to="/"
         className="flex items-center gap-3 cursor-pointer group" 
-        onClick={() => setCurrentPage('home')}
       >
         <motion.div 
           whileHover={{ scale: 1.05 }}
@@ -771,46 +782,55 @@ const App: React.FC = () => {
         <span className="text-2xl font-black tracking-tighter">
           Test<span className="gradient-text">Trail</span>
         </span>
-      </div>
+      </Link>
 
       <div className="hidden md:flex items-center gap-8">
+        <Link 
+          to="/contact" 
+          className={cn(
+            "text-sm font-bold uppercase tracking-widest transition-colors",
+            location.pathname === '/contact' ? "text-indigo-400" : "text-slate-400 hover:text-slate-200"
+          )}
+        >
+          Contact
+        </Link>
         {currentUser ? (
           <>
             {!currentUser.isAdmin && (
-              <button 
-                onClick={() => setCurrentPage('dashboard')} 
+              <Link 
+                to="/dashboard" 
                 className={cn(
                   "text-sm font-bold uppercase tracking-widest transition-colors",
-                  currentPage === 'dashboard' ? "text-indigo-400" : "text-slate-400 hover:text-slate-200"
+                  location.pathname === '/dashboard' ? "text-indigo-400" : "text-slate-400 hover:text-slate-200"
                 )}
               >
                 Dashboard
-              </button>
+              </Link>
             )}
             {currentUser.isAdmin && (
-              <button 
-                onClick={() => setCurrentPage('admin')} 
+              <Link 
+                to="/admin" 
                 className={cn(
                   "text-sm font-bold uppercase tracking-widest transition-colors",
-                  currentPage === 'admin' ? "text-purple-400" : "text-slate-400 hover:text-slate-200"
+                  location.pathname === '/admin' ? "text-purple-400" : "text-slate-400 hover:text-slate-200"
                 )}
               >
                 Admin Panel
-              </button>
+              </Link>
             )}
             {!currentUser.isAdmin && (
-              <button 
-                onClick={() => currentPage === 'profile' ? setCurrentPage('home') : setCurrentPage('profile')} 
+              <Link 
+                to="/profile" 
                 className={cn(
                   "flex items-center gap-2 px-4 py-2 rounded-xl transition-all border",
-                  currentPage === 'profile' 
+                  location.pathname === '/profile' 
                     ? "bg-indigo-500/10 border-indigo-500/30 text-indigo-400" 
                     : "border-transparent text-slate-400 hover:bg-white/5"
                 )}
               >
                 <UserCircle size={20} />
                 <span className="text-sm font-bold">{currentUser.fullName.split(' ')[0]}</span>
-              </button>
+              </Link>
             )}
             {currentUser.isAdmin && (
               <button 
@@ -825,7 +845,7 @@ const App: React.FC = () => {
           <motion.button 
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => { setAuthMode('login'); setCurrentPage('auth'); }}
+            onClick={() => { setAuthMode('login'); navigate('/auth'); }}
             className="px-6 py-2.5 bg-indigo-500 hover:bg-indigo-600 rounded-xl text-sm font-black uppercase tracking-widest transition-all shadow-xl shadow-indigo-500/20 active:scale-95"
           >
             Login
@@ -836,7 +856,7 @@ const App: React.FC = () => {
       <div className="md:hidden flex items-center gap-2">
         {!currentUser && (
           <button 
-            onClick={() => { setAuthMode('login'); setCurrentPage('auth'); }}
+            onClick={() => { setAuthMode('login'); navigate('/auth'); }}
             className="px-4 py-2 bg-indigo-500 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95"
           >
             Login
@@ -846,10 +866,10 @@ const App: React.FC = () => {
         <button 
           onClick={() => {
             if (currentUser) {
-              if (currentPage === 'profile') {
-                setCurrentPage('home');
+              if (location.pathname === '/profile') {
+                navigate('/');
               } else {
-                setCurrentPage('profile');
+                navigate('/profile');
               }
               setIsMobileMenuOpen(false);
             } else {
@@ -882,13 +902,17 @@ const App: React.FC = () => {
           >
             {currentUser ? (
               <>
-                {!currentUser.isAdmin && <button onClick={() => { setCurrentPage('dashboard'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2">Dashboard</button>}
-                {currentUser.isAdmin && <button onClick={() => { setCurrentPage('admin'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2 text-purple-400">Admin Panel</button>}
-                {!currentUser.isAdmin && <button onClick={() => { setCurrentPage('profile'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2">Profile</button>}
+                {!currentUser.isAdmin && <button onClick={() => { navigate('/dashboard'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2">Dashboard</button>}
+                {currentUser.isAdmin && <button onClick={() => { navigate('/admin'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2 text-purple-400">Admin Panel</button>}
+                {!currentUser.isAdmin && <button onClick={() => { navigate('/profile'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2">Profile</button>}
+                <button onClick={() => { navigate('/contact'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2">Contact Us</button>
                 <button onClick={() => { handleLogout(); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2 text-red-400">Logout</button>
               </>
             ) : (
-              <button onClick={() => { setAuthMode('login'); setCurrentPage('auth'); setIsMobileMenuOpen(false); }} className="w-full py-4 bg-indigo-500 rounded-2xl font-bold">Login / Signup</button>
+              <>
+                <button onClick={() => { navigate('/contact'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2">Contact Us</button>
+                <button onClick={() => { setAuthMode('login'); navigate('/auth'); setIsMobileMenuOpen(false); }} className="w-full py-4 bg-indigo-500 rounded-2xl font-bold">Login / Signup</button>
+              </>
             )}
           </motion.div>
         )}
@@ -923,8 +947,8 @@ const App: React.FC = () => {
             whileHover={{ scale: 1.05, y: -5 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => {
-              if (currentUser) setCurrentPage(currentUser.isAdmin ? 'admin' : 'dashboard');
-              else { setAuthMode('signup'); setCurrentPage('auth'); }
+              if (currentUser) navigate(currentUser.isAdmin ? '/admin' : '/dashboard');
+              else { setAuthMode('signup'); navigate('/auth'); }
             }}
             className="w-full sm:w-auto px-10 py-5 bg-indigo-500 hover:bg-indigo-600 rounded-[2rem] font-black text-lg shadow-2xl shadow-indigo-500/40 transition-all flex items-center justify-center gap-3 group active:scale-95"
           >
@@ -932,8 +956,8 @@ const App: React.FC = () => {
           </motion.button>
           <button 
              onClick={() => {
-               if (currentUser) setCurrentPage(currentUser.isAdmin ? 'admin' : 'dashboard');
-               else { setAuthMode('signup'); setCurrentPage('auth'); }
+               if (currentUser) navigate(currentUser.isAdmin ? '/admin' : '/dashboard');
+               else { setAuthMode('signup'); navigate('/auth'); }
              }}
              className="w-full sm:w-auto px-10 py-5 glass rounded-[2rem] font-black text-lg hover:bg-white/10 transition-all border border-white/10 active:scale-95">
             View Pro Pricing
@@ -1181,7 +1205,7 @@ const App: React.FC = () => {
                 <p className="text-slate-400 font-medium">Unlock unlimited 100-question tests with timer for just ₹{appConfig.subscriptionPrice}/mo.</p>
               </div>
               <button 
-                onClick={() => setCurrentPage('payment')}
+                onClick={() => navigate('/payment')}
                 className="w-full md:w-auto px-10 py-4 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 whitespace-nowrap transition-all active:scale-95"
               >
                 Go Pro Now
@@ -1503,7 +1527,7 @@ const App: React.FC = () => {
           <div className="pt-4 space-y-3">
             {!currentUser.isAdmin && (
               <button 
-                onClick={() => setCurrentPage('dashboard')}
+                onClick={() => navigate('/dashboard')}
                 className="w-full py-4 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all border border-indigo-500/20"
               >
                 <BarChart3 size={18} /> Dashboard
@@ -1511,7 +1535,7 @@ const App: React.FC = () => {
             )}
             {currentUser.isAdmin && (
               <button 
-                onClick={() => setCurrentPage('admin')}
+                onClick={() => navigate('/admin')}
                 className="w-full py-4 bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all border border-purple-500/20"
               >
                 <ShieldCheck size={18} /> Admin Panel
@@ -1904,7 +1928,7 @@ const App: React.FC = () => {
         <div className="w-full glass p-8 rounded-[2rem] space-y-6">
           <div className="flex flex-col gap-4">
             <button onClick={() => setReviewMode(true)} className="w-full py-4 glass hover:bg-white/10 rounded-2xl font-bold">Review Answers</button>
-            <button onClick={() => setCurrentPage('dashboard')} className="w-full py-4 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-bold shadow-xl shadow-indigo-500/30">Back to Dashboard</button>
+            <button onClick={() => navigate('/dashboard')} className="w-full py-4 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-bold shadow-xl shadow-indigo-500/30">Back to Dashboard</button>
           </div>
         </div>
       </motion.div>
@@ -1967,27 +1991,29 @@ const App: React.FC = () => {
         <main className="relative">
           <AnimatePresence mode="wait">
             <motion.div
-              key={currentPage}
+              key={location.pathname}
               initial={{ opacity: 0, x: 10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -10 }}
               transition={{ duration: 0.3, ease: "easeInOut" }}
             >
-              {currentPage === 'home' && <Home />}
-              {currentPage === 'auth' && <Auth />}
-              {currentPage === 'dashboard' && <Dashboard />}
-              {currentPage === 'payment' && <Payment />}
-              {currentPage === 'test' && <TestInterface />}
-              {currentPage === 'result' && <ResultPage />}
-              {currentPage === 'admin' && <AdminPanel />}
-              {currentPage === 'profile' && <ProfilePage />}
-              {currentPage === 'privacy' && <PrivacyPolicy onBack={() => setCurrentPage('home')} />}
-              {currentPage === 'terms' && <TermsAndConditions onBack={() => setCurrentPage('home')} />}
-              {currentPage === 'contact' && <ContactUs onBack={() => setCurrentPage('home')} />}
+              <Routes location={location}>
+                <Route path="/" element={<Home />} />
+                <Route path="/auth" element={<Auth />} />
+                <Route path="/dashboard" element={currentUser ? <Dashboard /> : <Navigate to="/auth" />} />
+                <Route path="/payment" element={currentUser ? <Payment /> : <Navigate to="/auth" />} />
+                <Route path="/test" element={currentUser ? <TestInterface /> : <Navigate to="/auth" />} />
+                <Route path="/result" element={currentUser ? <ResultPage /> : <Navigate to="/auth" />} />
+                <Route path="/admin" element={currentUser?.isAdmin ? <AdminPanel /> : <Navigate to="/" />} />
+                <Route path="/profile" element={currentUser ? <ProfilePage /> : <Navigate to="/auth" />} />
+                <Route path="/privacy" element={<PrivacyPolicy onBack={() => navigate('/')} />} />
+                <Route path="/terms" element={<TermsAndConditions onBack={() => navigate('/')} />} />
+                <Route path="/contact" element={<ContactUs onBack={() => navigate('/')} />} />
+              </Routes>
             </motion.div>
           </AnimatePresence>
         </main>
-        {isLoading && currentPage !== 'auth' && currentPage !== 'home' && (
+        {isLoading && location.pathname !== '/auth' && location.pathname !== '/' && (
           <div className="fixed inset-0 z-[100] bg-slate-950/60 flex flex-col items-center justify-center space-y-4">
             <div className="w-16 h-16 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
             <div className="text-center px-6">
@@ -2018,24 +2044,24 @@ const App: React.FC = () => {
            <p>© 2024 TestTrail. v1.1 - All rights reserved.</p>
            <p className="mt-1">Handcrafted for future civil servants of India.</p>
            <div className="mt-4 flex justify-center gap-6">
-             <button 
-               onClick={() => setCurrentPage('privacy')}
+             <Link 
+               to="/privacy"
                className="hover:text-indigo-400 transition-colors font-medium"
              >
                Privacy Policy
-             </button>
-             <button 
-               onClick={() => setCurrentPage('terms')}
+             </Link>
+             <Link 
+               to="/terms"
                className="hover:text-indigo-400 transition-colors font-medium"
              >
                Terms & Conditions
-             </button>
-             <button 
-               onClick={() => setCurrentPage('contact')}
+             </Link>
+             <Link 
+               to="/contact"
                className="hover:text-indigo-400 transition-colors font-medium"
              >
                Contact Us
-             </button>
+             </Link>
            </div>
         </footer>
       </div>
