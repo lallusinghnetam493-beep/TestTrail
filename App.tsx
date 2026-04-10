@@ -675,19 +675,16 @@ const App: React.FC = () => {
               body: JSON.stringify({
                 razorpay_order_id: response.razorpay_order_id,
                 razorpay_payment_id: response.razorpay_payment_id,
-                razorpay_signature: response.razorpay_signature
+                razorpay_signature: response.razorpay_signature,
+                userId: currentUser.id
               })
             });
             
             const verifyData = await verifyRes.json();
             
             if (verifyData.status === 'success') {
-              // 4. Update User Subscription in Firestore
+              // 4. Update local state (Server already updated Firestore)
               const updatedUser = { ...currentUser, subscription: SubscriptionStatus.PRO };
-              await updateDoc(doc(db, 'users', currentUser.id), {
-                subscription: SubscriptionStatus.PRO
-              });
-              
               setCurrentUser(updatedUser);
               localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
               showAlert("Success", "Welcome to Pro! Your subscription is now active.");

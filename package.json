@@ -6,12 +6,12 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build",
+    "start": "node server.ts",
     "preview": "vite preview",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
     "@google/genai": "^1.40.0",
-    "@supabase/supabase-js": "^2.101.1",
     "@tailwindcss/vite": "^4.2.1",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",

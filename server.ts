@@ -1,13 +1,26 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import cors from "cors";
 import Razorpay from "razorpay";
 import crypto from "crypto";
 import fs from "fs";
+import admin from "firebase-admin";
 
-// Load firebase config for server-side use if needed
-const firebaseConfig = JSON.parse(fs.readFileSync("./firebase-applet-config.json", "utf-8"));
+// Load firebase config
+let firebaseConfig: any = {};
+try {
+  firebaseConfig = JSON.parse(fs.readFileSync("./firebase-applet-config.json", "utf-8"));
+} catch (err) {
+  console.error("Error loading firebase-applet-config.json:", err);
+}
+
+// Initialize Firebase Admin
+if (!admin.apps.length && firebaseConfig.projectId) {
+  admin.initializeApp({
+    projectId: firebaseConfig.projectId,
+  });
+}
+const firestore = admin.firestore();
 
 async function startServer() {
   const app = express();
@@ -36,7 +49,7 @@ async function startServer() {
       }
 
       const options = {
-        amount: Math.round(amount * 100), // amount in the smallest currency unit
+        amount: Math.round(amount * 100), 
         currency,
         receipt: `receipt_${Date.now()}`,
       };
@@ -55,8 +68,13 @@ async function startServer() {
       const { 
         razorpay_order_id, 
         razorpay_payment_id, 
-        razorpay_signature 
+        razorpay_signature,
+        userId
       } = req.body;
+
+      if (!userId) {
+        return res.status(400).json({ error: "User ID is required" });
+      }
 
       const sign = razorpay_order_id + "|" + razorpay_payment_id;
       const expectedSign = crypto
@@ -65,8 +83,14 @@ async function startServer() {
         .digest("hex");
 
       if (razorpay_signature === expectedSign) {
-        // Payment verified
-        res.json({ status: "success", message: "Payment verified successfully" });
+        await firestore.collection("users").doc(userId).update({
+          subscription: "PRO",
+          lastPaymentId: razorpay_payment_id,
+          lastOrderId: razorpay_order_id,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        res.json({ status: "success", message: "Payment verified and subscription updated" });
       } else {
         res.status(400).json({ status: "failure", message: "Invalid signature" });
       }
@@ -78,6 +102,7 @@ async function startServer() {
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
