@@ -159,6 +159,22 @@ const AppContent: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // --- Connection Test ---
+  useEffect(() => {
+    const testConnection = async () => {
+      try {
+        // Use getDocFromServer to bypass cache and check real connectivity
+        await getDocFromServer(doc(db, 'config', 'connection_test'));
+      } catch (error: any) {
+        if (error.message?.includes('the client is offline')) {
+          console.error("Firestore is offline. Check Firebase configuration.");
+          setError("Database connection failed. Please refresh or check your internet.");
+        }
+      }
+    };
+    testConnection();
+  }, []);
+
   // --- State ---
   const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot'>('login');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
