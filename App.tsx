@@ -634,40 +634,87 @@ const App: React.FC = () => {
   }, [currentPage, currentTest, timeLeft, submitTest]);
 
   // --- Payment Handler ---
-  const handlePaymentSubmit = async (utr: string) => {
+  const handleRazorpayPayment = async () => {
     if (!currentUser) return;
-    const cleanUtr = utr.trim();
-    
-    if (!cleanUtr || cleanUtr.length !== 12) {
-      showAlert("Invalid UTR", "Please enter a valid 12-digit UTR number.");
-      return;
-    }
-
-    // Check for duplicate UTR across all users
-    const q = query(collection(db, 'users'), where('utr', '==', cleanUtr));
-    const querySnapshot = await getDocs(q);
-    const duplicateUtr = querySnapshot.docs.find(doc => doc.id !== currentUser.id);
-
-    if (duplicateUtr) {
-      showAlert("Duplicate UTR", "This UTR has already been submitted by another user. Please check and try again.");
-      return;
-    }
     
     setIsLoadingWithRef(true);
     try {
-      const updatedUser = { ...currentUser, subscription: SubscriptionStatus.PENDING, utr: cleanUtr };
-      
-      await updateDoc(doc(db, 'users', currentUser.id), {
-        subscription: SubscriptionStatus.PENDING,
-        utr: cleanUtr
+      // 1. Create Order on Server
+      const response = await fetch('/api/payment/order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          amount: appConfig.subscriptionPrice,
+          currency: 'INR'
+        })
       });
+      
+      const order = await response.json();
+      
+      if (!order.id) {
+        throw new Error('Failed to create payment order');
+      }
 
-      setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
-      localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
-      setCurrentUser(updatedUser);
-      setCurrentPage('dashboard');
+      // 2. Trigger Razorpay Popup
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID,
+        amount: order.amount,
+        currency: order.currency,
+        name: "TestTrail AI",
+        description: "Pro Subscription",
+        order_id: order.id,
+        handler: async (response: any) => {
+          try {
+            setIsLoadingWithRef(true);
+            setLoadingMessage('Verifying payment...');
+            
+            // 3. Verify Payment on Server
+            const verifyRes = await fetch('/api/payment/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature
+              })
+            });
+            
+            const verifyData = await verifyRes.json();
+            
+            if (verifyData.status === 'success') {
+              // 4. Update User Subscription in Firestore
+              const updatedUser = { ...currentUser, subscription: SubscriptionStatus.PRO };
+              await updateDoc(doc(db, 'users', currentUser.id), {
+                subscription: SubscriptionStatus.PRO
+              });
+              
+              setCurrentUser(updatedUser);
+              localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
+              showAlert("Success", "Welcome to Pro! Your subscription is now active.");
+              setCurrentPage('dashboard');
+            } else {
+              showAlert("Payment Verification Failed", verifyData.message || "Could not verify payment.");
+            }
+          } catch (err: any) {
+            showAlert("Error", "Verification failed: " + err.message);
+          } finally {
+            setIsLoadingWithRef(false);
+          }
+        },
+        prefill: {
+          name: currentUser.fullName,
+          email: currentUser.email
+        },
+        theme: {
+          color: "#6366f1"
+        }
+      };
+
+      const rzp = new (window as any).Razorpay(options);
+      rzp.open();
+      
     } catch (err: any) {
-      showAlert("Payment Error", "Payment failed: " + err.message);
+      showAlert("Payment Error", "Could not initiate payment: " + err.message);
     } finally {
       setIsLoadingWithRef(false);
     }
@@ -1316,10 +1363,6 @@ const App: React.FC = () => {
   };
 
   const Payment = () => {
-    const [utr, setUtr] = useState('');
-    const upiUri = `upi://pay?pa=${appConfig.upiId}&pn=TestTrail&am=${appConfig.subscriptionPrice}&cu=INR&tn=TestTrail%20Pro%20Subscription`;
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(upiUri)}`;
-
     return (
       <div className="pt-32 pb-20 px-6 flex justify-center items-start min-h-screen">
         <motion.div 
@@ -1334,51 +1377,42 @@ const App: React.FC = () => {
           
           <div className="glass p-10 rounded-[3rem] space-y-10 text-center shadow-2xl shadow-indigo-500/10 border-white/10">
             <div className="space-y-8">
-              <div className="relative w-72 h-72 bg-white mx-auto rounded-[2.5rem] flex items-center justify-center p-6 shadow-[0_0_60px_rgba(99,102,241,0.3)] group overflow-hidden">
-                <img src={qrUrl} alt="UPI Payment QR" className="w-full h-full object-contain group-hover:scale-110 transition-transform duration-500" />
-                <div className="absolute inset-0 bg-indigo-500/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+              <div className="pt-2 space-y-1">
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Subscription Plan</p>
+                <div className="text-6xl font-black text-white tracking-tighter">₹{appConfig.subscriptionPrice}</div>
+                <p className="text-slate-400 font-bold">Lifetime Access</p>
               </div>
 
               <div className="pt-4">
-                <a 
-                  href={upiUri} 
-                  className="inline-flex items-center justify-center gap-3 w-full py-6 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 transition-all active:scale-95"
+                <button 
+                  disabled={isLoading}
+                  onClick={handleRazorpayPayment}
+                  className="inline-flex items-center justify-center gap-3 w-full py-6 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50"
                 >
-                  Pay via UPI App <ArrowRight size={24} />
-                </a>
-              </div>
-
-              <div className="pt-2 space-y-1">
-                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Total Amount</p>
-                <div className="text-6xl font-black text-white tracking-tighter">₹{appConfig.subscriptionPrice}</div>
+                  {isLoading ? <Loader2 className="animate-spin" /> : <Zap size={24} />}
+                  {isLoading ? 'Processing...' : 'Pay with Razorpay'}
+                </button>
               </div>
             </div>
 
             <div className="space-y-6 text-left border-t border-white/5 pt-10">
-              <div className="space-y-3">
-                <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 ml-1 flex items-center gap-2">
-                  <AlertCircle size={14} className="text-indigo-400" /> Enter 12-digit UTR / Transaction ID
-                </label>
-                <input 
-                  type="text" 
-                  value={utr}
-                  maxLength={12}
-                  onChange={e => {
-                    const val = e.target.value.replace(/\D/g, '');
-                    if (val.length <= 12) setUtr(val);
-                  }}
-                  className="w-full px-6 py-5 bg-white/[0.03] border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500/50 transition-all text-center tracking-[0.3em] font-mono text-2xl font-bold"
-                  placeholder="0000 0000 0000"
-                />
-              </div>
-              <button 
-                disabled={isLoading || utr.length !== 12}
-                onClick={() => handlePaymentSubmit(utr)}
-                className="w-full py-5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-black text-lg transition-all active:scale-95 disabled:opacity-30 flex items-center justify-center gap-3"
-              >
-                {isLoading ? <Loader2 className="animate-spin" /> : <CheckCircle2 size={20} />}
-                {isLoading ? 'Verifying...' : 'Submit for Verification'}
-              </button>
+              <h4 className="text-xl font-black text-white">Pro Benefits:</h4>
+              <ul className="space-y-4">
+                {[
+                  'Unlimited 100-Question AI Tests',
+                  'Elite Performance Analytics',
+                  'Priority AI Generation',
+                  'Ad-Free Experience',
+                  'Lifetime Validity'
+                ].map(benefit => (
+                  <li key={benefit} className="flex items-center gap-3 text-slate-300 font-medium">
+                    <div className="w-5 h-5 bg-green-500/20 rounded-full flex items-center justify-center text-green-400">
+                      <CheckCircle2 size={14} />
+                    </div>
+                    {benefit}
+                  </li>
+                ))}
+              </ul>
             </div>
 
             <div className="flex items-center justify-center gap-6 pt-4">
@@ -1514,9 +1548,9 @@ const App: React.FC = () => {
     const updateConfig = async () => {
       setIsLoadingWithRef(true);
       try {
-        await setDoc(doc(db, 'config', 'global'), { upiId: upi, subscriptionPrice: Number(price) });
-        setAppConfig({ upiId: upi, subscriptionPrice: Number(price) });
-        showAlert("Success", "Config Updated!");
+        await setDoc(doc(db, 'config', 'global'), { subscriptionPrice: Number(price) });
+        setAppConfig(prev => ({ ...prev, subscriptionPrice: Number(price) }));
+        showAlert("Success", "Price Updated!");
       } catch (err: any) {
         showAlert("Error", "Failed to update config: " + err.message);
       } finally {
@@ -1601,16 +1635,6 @@ const App: React.FC = () => {
               
               <div className="space-y-4">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Backend UPI ID</label>
-                  <input 
-                    type="text" 
-                    value={upi}
-                    onChange={e => setUpi(e.target.value)}
-                    className="w-full px-5 py-4 bg-white/[0.03] border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500/50 transition-all font-mono text-sm"
-                    placeholder="e.g. yourname@upi"
-                  />
-                </div>
-                <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Subscription Price (₹)</label>
                   <input 
                     type="number" 
@@ -1644,7 +1668,6 @@ const App: React.FC = () => {
                   <tr className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em]">
                     <th className="px-4 pb-2">User</th>
                     <th className="px-4 pb-2">Status</th>
-                    <th className="px-4 pb-2">UTR</th>
                     <th className="px-4 pb-2 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -1681,30 +1704,8 @@ const App: React.FC = () => {
                           {user.subscription}
                         </span>
                       </td>
-                      <td className="px-4 py-4 bg-white/[0.02] border-y border-white/[0.05]">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-mono text-slate-400">{user.utr || '—'}</span>
-                          {user.utr && (
-                            <button 
-                              onClick={() => copyToClipboard(user.utr!, user.id)}
-                              className="p-1.5 hover:bg-white/5 rounded-lg transition-colors text-slate-500 hover:text-indigo-400"
-                              title="Copy UTR"
-                            >
-                              {copiedId === user.id ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
-                            </button>
-                          )}
-                        </div>
-                      </td>
                       <td className="px-4 py-4 bg-white/[0.02] rounded-r-2xl border-y border-r border-white/[0.05] text-right">
                         <div className="flex items-center justify-end gap-2">
-                          {user.subscription === SubscriptionStatus.PENDING && (
-                            <button 
-                              onClick={() => approvePayment(user.id)} 
-                              className="px-4 py-2 bg-indigo-500 hover:bg-indigo-600 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-indigo-500/20"
-                            >
-                              Approve
-                            </button>
-                          )}
                           {!user.isAdmin && (
                             <button 
                               onClick={() => deleteUser(user.id)} 
