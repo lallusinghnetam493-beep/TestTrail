@@ -135,7 +135,7 @@ async function startServer() {
   });
 
   // API 404 Handler - MUST be before Vite middleware
-  app.use("/api/*all", (req, res) => {
+  app.use("/api/*any", (req, res) => {
     res.status(404).json({ error: `API route not found: ${req.originalUrl}` });
   });
 
@@ -150,7 +150,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
+    app.get('*any', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
