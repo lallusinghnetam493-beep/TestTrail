@@ -679,7 +679,14 @@ const AppContent: React.FC = () => {
         })
       });
       
-      const order = await response.json();
+      const responseText = await response.text();
+      let order;
+      try {
+        order = JSON.parse(responseText);
+      } catch (e) {
+        console.error("Failed to parse payment order response:", responseText);
+        throw new Error(`Server returned invalid response. Please check if API keys are configured.`);
+      }
       
       if (!response.ok) {
         throw new Error(order.details || order.error || 'Failed to create payment order');
@@ -714,7 +721,13 @@ const AppContent: React.FC = () => {
               })
             });
             
-            const verifyData = await verifyRes.json();
+            const verifyText = await verifyRes.text();
+            let verifyData;
+            try {
+              verifyData = JSON.parse(verifyText);
+            } catch (e) {
+              throw new Error("Invalid verification response from server.");
+            }
             
             if (verifyData.status === 'success') {
               // 4. Update local state (Server already updated Firestore)
