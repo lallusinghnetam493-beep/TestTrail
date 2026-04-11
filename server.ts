@@ -96,6 +96,13 @@ async function startServer() {
         .update(sign.toString())
         .digest("hex");
 
+      console.log("Verification Details:", {
+        orderId: razorpay_order_id,
+        paymentId: razorpay_payment_id,
+        receivedSign: razorpay_signature,
+        expectedSign: expectedSign
+      });
+
       if (razorpay_signature === expectedSign) {
         // Fetch order details to get amount
         const orderDetails = await razorpay.orders.fetch(razorpay_order_id);
