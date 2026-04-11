@@ -731,8 +731,13 @@ const AppContent: React.FC = () => {
       }
 
       // 2. Trigger Razorpay Popup
+      const razorpayKey = process.env.VITE_RAZORPAY_KEY_ID;
+      if (!razorpayKey) {
+        throw new Error('Razorpay Key ID is missing. Please set VITE_RAZORPAY_KEY_ID in settings.');
+      }
+
       const options = {
-        key: import.meta.env.VITE_RAZORPAY_KEY_ID,
+        key: razorpayKey,
         amount: order.amount,
         currency: order.currency,
         name: "TestTrail AI",
@@ -1468,6 +1473,10 @@ const AppContent: React.FC = () => {
           <div className="text-center space-y-3">
             <h2 className="text-5xl font-black tracking-tight">Upgrade to <span className="gradient-text">Pro</span></h2>
             <p className="text-slate-400 font-medium">Unlock unlimited AI generation and compete at elite levels.</p>
+            <div className="bg-yellow-500/10 border border-yellow-500/20 p-4 rounded-2xl text-yellow-400 text-xs font-bold">
+              <p>Warning: You are paying for account: <span className="underline">{currentUser?.email}</span></p>
+              <p className="mt-1 opacity-70">Ensure this matches your Razorpay email to avoid confusion.</p>
+            </div>
           </div>
           
           <div className="glass p-10 rounded-[3rem] space-y-10 text-center shadow-2xl shadow-indigo-500/10 border-white/10">
@@ -1525,6 +1534,25 @@ const AppContent: React.FC = () => {
 
   const ProfilePage = () => {
     if (!currentUser) return null;
+
+    const syncSubscription = async () => {
+      setIsLoadingWithRef(true);
+      setLoadingMessage('Syncing subscription...');
+      try {
+        const userDoc = await getDoc(doc(db, 'users', currentUser.id));
+        if (userDoc.exists()) {
+          const data = userDoc.data() as User;
+          const updatedUser = { ...currentUser, subscription: data.subscription, subscriptionExpiresAt: data.subscriptionExpiresAt };
+          setCurrentUser(updatedUser);
+          localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
+          showAlert("Synced", `Your status is: ${data.subscription}`);
+        }
+      } catch (err: any) {
+        showAlert("Error", "Failed to sync: " + err.message);
+      } finally {
+        setIsLoadingWithRef(false);
+      }
+    };
 
     return (
       <motion.div 
@@ -1592,6 +1620,12 @@ const AppContent: React.FC = () => {
           </div>
 
           <div className="pt-4 space-y-3">
+            <button 
+              onClick={syncSubscription}
+              className="w-full py-4 bg-white/5 hover:bg-white/10 text-slate-300 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all border border-white/10"
+            >
+              <RefreshCw size={18} className={isLoading ? "animate-spin" : ""} /> Sync Subscription Status
+            </button>
             {!currentUser.isAdmin && (
               <button 
                 onClick={() => navigate('/dashboard')}
@@ -1699,6 +1733,32 @@ const AppContent: React.FC = () => {
       );
     };
 
+    const togglePro = async (userId: string, currentStatus: SubscriptionStatus) => {
+      const newStatus = currentStatus === SubscriptionStatus.PRO ? SubscriptionStatus.FREE : SubscriptionStatus.PRO;
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 30);
+
+      setIsLoadingWithRef(true);
+      try {
+        await updateDoc(doc(db, 'users', userId), { 
+          subscription: newStatus,
+          subscriptionExpiresAt: newStatus === SubscriptionStatus.PRO ? expiresAt.getTime() : null
+        });
+        
+        setAllUsers(prev => prev.map(u => u.id === userId ? { 
+          ...u, 
+          subscription: newStatus,
+          subscriptionExpiresAt: newStatus === SubscriptionStatus.PRO ? expiresAt.getTime() : undefined
+        } : u));
+        
+        showAlert("Updated", `User is now ${newStatus}`);
+      } catch (err: any) {
+        showAlert("Error", "Failed to update user: " + err.message);
+      } finally {
+        setIsLoadingWithRef(false);
+      }
+    };
+
     return (
       <motion.div 
         initial={{ opacity: 0 }}
@@ -1802,13 +1862,27 @@ const AppContent: React.FC = () => {
                       <td className="px-4 py-4 bg-white/[0.02] rounded-r-2xl border-y border-r border-white/[0.05] text-right">
                         <div className="flex items-center justify-end gap-2">
                           {!user.isAdmin && (
-                            <button 
-                              onClick={() => deleteUser(user.id)} 
-                              className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
-                              title="Delete User"
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                            <>
+                              <button 
+                                onClick={() => togglePro(user.id, user.subscription)} 
+                                className={cn(
+                                  "p-2 rounded-xl transition-all",
+                                  user.subscription === SubscriptionStatus.PRO 
+                                    ? "text-green-400 hover:bg-green-500/10" 
+                                    : "text-slate-500 hover:text-indigo-400 hover:bg-indigo-500/10"
+                                )}
+                                title={user.subscription === SubscriptionStatus.PRO ? "Remove Pro" : "Make Pro"}
+                              >
+                                <Zap size={16} />
+                              </button>
+                              <button 
+                                onClick={() => deleteUser(user.id)} 
+                                className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
+                                title="Delete User"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>

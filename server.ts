@@ -53,6 +53,10 @@ async function startServer() {
     key_secret: process.env.RAZORPAY_KEY_SECRET || "MISSING_KEY_SECRET",
   });
 
+  console.log("Razorpay Initialized:");
+  console.log("- Key ID:", process.env.VITE_RAZORPAY_KEY_ID ? "Loaded" : "MISSING");
+  console.log("- Key Secret:", process.env.RAZORPAY_KEY_SECRET ? "Loaded" : "MISSING");
+
   // --- API ROUTES ---
   
   app.get("/api/ping", (req, res) => {
@@ -90,15 +94,28 @@ async function startServer() {
       const { razorpay_order_id, razorpay_payment_id, razorpay_signature, userId } = req.body;
       if (!userId) return res.status(400).json({ error: "User ID missing" });
 
+      const secret = process.env.RAZORPAY_KEY_SECRET;
+      if (!secret) {
+        console.error("RAZORPAY_KEY_SECRET is missing in environment variables!");
+        return res.status(500).json({ status: "failure", message: "Server configuration error: Secret missing" });
+      }
+
       const sign = razorpay_order_id + "|" + razorpay_payment_id;
       const expectedSign = crypto
-        .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET!)
+        .createHmac("sha256", secret)
         .update(sign.toString())
         .digest("hex");
+
+      console.log("Payment Verification Debug:");
+      console.log("- Order ID:", razorpay_order_id);
+      console.log("- Signature Received:", razorpay_signature);
+      console.log("- Signature Expected:", expectedSign);
 
       if (razorpay_signature === expectedSign) {
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + 30);
+
+        console.log(`[Payment Success] Updating user ${userId} to PRO status.`);
 
         await firestore.collection("users").doc(userId).update({
           subscription: "PRO",
@@ -107,7 +124,11 @@ async function startServer() {
         });
         res.json({ status: "success", expiresAt: expiresAt.getTime() });
       } else {
-        res.status(400).json({ status: "failure" });
+        console.error(`[Payment Failure] Signature mismatch for user ${userId}`);
+        res.status(400).json({ 
+          status: "failure", 
+          message: "Signature mismatch. Please contact support with your Payment ID." 
+        });
       }
     } catch (error: any) {
       console.error("Razorpay Verification Error:", error);
