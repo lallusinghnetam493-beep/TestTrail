@@ -92,7 +92,7 @@ const CURRENT_USER_KEY = 'tt_current_user';
 // --- Mock Initial Config ---
 const DEFAULT_CONFIG: AppConfig = {
   upiId: '8839191411@ibl',
-  subscriptionPrice: 100,
+  subscriptionPrice: 5,
 };
 
 
@@ -272,10 +272,20 @@ const AppContent: React.FC = () => {
         }
 
         if (configDoc && configDoc.exists()) {
-          setAppConfig({
-            upiId: configDoc.data().upiId,
-            subscriptionPrice: configDoc.data().subscriptionPrice
-          });
+          const data = configDoc.data();
+          // If the price is still 100 (old default), update it to 5 as requested
+          if (data.subscriptionPrice === 100) {
+            await updateDoc(doc(db, 'config', 'global'), { subscriptionPrice: 5 });
+            setAppConfig({
+              upiId: data.upiId,
+              subscriptionPrice: 5
+            });
+          } else {
+            setAppConfig({
+              upiId: data.upiId,
+              subscriptionPrice: data.subscriptionPrice
+            });
+          }
         } else {
           // Initialize default config if missing - only if we can
           try {
