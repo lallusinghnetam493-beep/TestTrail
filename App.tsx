@@ -685,7 +685,7 @@ const AppContent: React.FC = () => {
         order = JSON.parse(responseText);
       } catch (e) {
         console.error("Failed to parse payment order response:", responseText);
-        throw new Error(`Server returned invalid response. Please check if API keys are configured.`);
+        throw new Error(`Server returned HTML instead of JSON. This usually means the API route was not found or the server crashed. Response: ${responseText.substring(0, 100)}...`);
       }
       
       if (!response.ok) {

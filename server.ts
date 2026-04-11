@@ -40,9 +40,9 @@ async function startServer() {
   app.use(cors());
   app.use(express.json());
 
-  // Log all API requests for debugging
-  app.use("/api", (req, res, next) => {
-    console.log(`API Request: ${req.method} ${req.url}`);
+  // Log all requests for debugging
+  app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
     next();
   });
 
@@ -51,13 +51,15 @@ async function startServer() {
     key_secret: process.env.RAZORPAY_KEY_SECRET || "MISSING_KEY_SECRET",
   });
 
-  // API Routes
-  app.get("/api/health", (req, res) => {
+  // API Router
+  const apiRouter = express.Router();
+
+  apiRouter.get("/health", (req, res) => {
     res.json({ status: "ok" });
   });
 
   // Create Razorpay Order
-  app.post("/api/payment/order", async (req, res) => {
+  apiRouter.post("/payment/order", async (req, res) => {
     try {
       const { amount, currency = "INR" } = req.body;
       
@@ -65,7 +67,7 @@ async function startServer() {
         return res.status(400).json({ error: "Amount is required" });
       }
 
-      if (process.env.VITE_RAZORPAY_KEY_ID === undefined || process.env.RAZORPAY_KEY_SECRET === undefined) {
+      if (!process.env.VITE_RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
         return res.status(500).json({ 
           error: "Razorpay API keys are not configured in environment variables.",
           details: "Please add VITE_RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to your environment."
@@ -90,7 +92,7 @@ async function startServer() {
   });
 
   // Verify Razorpay Payment
-  app.post("/api/payment/verify", async (req, res) => {
+  apiRouter.post("/payment/verify", async (req, res) => {
     try {
       const { 
         razorpay_order_id, 
@@ -134,9 +136,12 @@ async function startServer() {
     }
   });
 
-  // API 404 Handler - MUST be before Vite middleware
-  app.use(/\/api\/.*/, (req, res) => {
-    res.status(404).json({ error: `API route not found: ${req.originalUrl}` });
+  // Mount API Router
+  app.use("/api", apiRouter);
+
+  // API 404 Handler - MUST be after API Router but before Vite/Static
+  app.use("/api", (req, res) => {
+    res.status(404).json({ error: `API route not found: ${req.method} ${req.url}` });
   });
 
   // Vite middleware for development
@@ -150,7 +155,8 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get(/.*/, (req, res) => {
+    app.use((req, res) => {
+      console.log(`[${new Date().toISOString()}] Catch-all hit: ${req.method} ${req.url}`);
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
