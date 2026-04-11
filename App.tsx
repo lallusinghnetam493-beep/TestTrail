@@ -1481,11 +1481,11 @@ const AppContent: React.FC = () => {
               <h4 className="text-xl font-black text-white">Pro Benefits:</h4>
               <ul className="space-y-4">
                 {[
-                  'Unlimited 100-Question AI Tests',
-                  'Elite Performance Analytics',
-                  'Priority AI Generation',
+                  'Unlimited 100-Question Tests',
+                  'Advanced Performance Analytics',
+                  'Priority Access',
                   'Ad-Free Experience',
-                  'Lifetime Validity'
+                  '30 Days Premium Access'
                 ].map(benefit => (
                   <li key={benefit} className="flex items-center gap-3 text-slate-300 font-medium">
                     <div className="w-5 h-5 bg-green-500/20 rounded-full flex items-center justify-center text-green-400">
