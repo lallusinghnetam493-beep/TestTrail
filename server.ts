@@ -33,10 +33,10 @@ if (firebaseConfig.projectId) {
   console.error("Firebase Project ID missing.");
 }
 
-async function startServer() {
-  const app = express();
-  const PORT = 3000;
+const app = express();
+const PORT = 3000;
 
+async function startServer() {
   console.log(`[${new Date().toISOString()}] Starting server on port ${PORT}...`);
 
   app.use(cors());
@@ -140,9 +140,14 @@ async function startServer() {
     }
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
-  });
+  if (process.env.NODE_ENV !== "test") {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  }
 }
+
+// For Vercel compatibility
+export default app;
 
 startServer();
