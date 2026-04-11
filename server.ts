@@ -97,14 +97,30 @@ async function startServer() {
         .digest("hex");
 
       if (razorpay_signature === expectedSign) {
+        // Fetch order details to get amount
+        const orderDetails = await razorpay.orders.fetch(razorpay_order_id);
+        
         const expiresAt = new Date();
         expiresAt.setDate(expiresAt.getDate() + 30);
 
+        // Update user status
         await firestore.collection("users").doc(userId).update({
           subscription: "PRO",
           subscriptionExpiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
+
+        // Create payment record
+        await firestore.collection("payments").add({
+          userId,
+          orderId: razorpay_order_id,
+          paymentId: razorpay_payment_id,
+          amount: orderDetails.amount / 100, // Convert from paise
+          currency: orderDetails.currency,
+          status: "captured",
+          timestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
+
         res.json({ status: "success", expiresAt: expiresAt.getTime() });
       } else {
         res.status(400).json({ status: "failure" });

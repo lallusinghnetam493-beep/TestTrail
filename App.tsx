@@ -386,6 +386,7 @@ const AppContent: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [appConfig, setAppConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   const [testResults, setTestResults] = useState<TestResult[]>([]);
+  const [payments, setPayments] = useState<any[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('Please wait...');
@@ -610,6 +611,24 @@ const AppContent: React.FC = () => {
 
     return () => unsubscribe();
   }, [currentUser]);
+
+  // --- Real-time listener for payments (Admin only) ---
+  useEffect(() => {
+    if (location.pathname === '/admin' && currentUser?.isAdmin) {
+      const q = query(collection(db, 'payments'), orderBy('timestamp', 'desc'));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const paymentsList = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data(),
+          timestamp: doc.data().timestamp?.toDate() || new Date()
+        }));
+        setPayments(paymentsList);
+      }, (err) => {
+        handleFirestoreError(err, OperationType.LIST, 'payments');
+      });
+      return () => unsubscribe();
+    }
+  }, [location.pathname, currentUser]);
 
   // --- Scroll to top on page change ---
   useEffect(() => {
@@ -1825,7 +1844,18 @@ const AppContent: React.FC = () => {
     );
   };
 
-  const AdminPanel = () => {
+  const AdminPanel = ({ 
+    payments, 
+    users, 
+    appConfig, 
+    setAppConfig, 
+    setAllUsers, 
+    currentUser, 
+    handleLogout, 
+    setIsLoadingWithRef, 
+    showAlert, 
+    showConfirm 
+  }: any) => {
     const [upi, setUpi] = useState(appConfig.upiId);
     const [price, setPrice] = useState(appConfig.subscriptionPrice);
     const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -1840,7 +1870,7 @@ const AppContent: React.FC = () => {
       setIsLoadingWithRef(true);
       try {
         await setDoc(doc(db, 'config', 'global'), { subscriptionPrice: Number(price) });
-        setAppConfig(prev => ({ ...prev, subscriptionPrice: Number(price) }));
+        setAppConfig((prev: any) => ({ ...prev, subscriptionPrice: Number(price) }));
         showAlert("Success", "Price Updated!");
       } catch (err: any) {
         showAlert("Error", "Failed to update config: " + err.message);
@@ -1880,7 +1910,7 @@ const AppContent: React.FC = () => {
             await deleteDoc(doc(db, 'users', userId));
             // Results deletion would require a query + batch delete
             
-            setAllUsers(prev => prev.filter(u => u.id !== userId));
+            setAllUsers((prev: any) => prev.filter((u: any) => u.id !== userId));
             
             if (currentUser?.id === userId) {
               handleLogout();
@@ -1943,6 +1973,34 @@ const AppContent: React.FC = () => {
                 </button>
               </div>
             </div>
+
+            <div className="glass p-8 rounded-[2.5rem] space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-green-500/10 rounded-xl text-green-400">
+                  <CreditCard size={20} />
+                </div>
+                <h3 className="font-bold text-xl text-white">Recent Payments</h3>
+              </div>
+              <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                {payments.length === 0 ? (
+                  <p className="text-slate-500 text-xs font-bold text-center py-8">No payments recorded yet.</p>
+                ) : (
+                  payments.map((pay: any) => (
+                    <div key={pay.id} className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl space-y-2">
+                      <div className="flex justify-between items-start">
+                        <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">₹{pay.amount}</div>
+                        <div className="text-[8px] text-slate-500 font-mono">{new Date(pay.timestamp).toLocaleString()}</div>
+                      </div>
+                      <div className="text-[10px] text-slate-300 font-bold truncate">User: {users.find((u: any) => u.id === pay.userId)?.fullName || pay.userId}</div>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-[8px] text-slate-600 font-mono truncate">ID: {pay.paymentId}</div>
+                        <span className="text-[8px] px-1.5 py-0.5 bg-green-500/10 text-green-400 rounded-md font-black uppercase tracking-widest border border-green-500/20">Captured</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
 
           <div className="lg:col-span-8 glass p-8 rounded-[2.5rem] space-y-6">
@@ -1963,7 +2021,7 @@ const AppContent: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {users.map((user, index) => (
+                  {users.map((user: any, index: number) => (
                     <motion.tr 
                       key={user.id} 
                       initial={{ opacity: 0, y: 10 }}
@@ -2096,7 +2154,18 @@ const AppContent: React.FC = () => {
                   submitTest={submitTest}
                 /> : <Navigate to="/auth" />} />
                 <Route path="/result" element={currentUser ? <ResultPage lastResult={lastResult} navigate={navigate} /> : <Navigate to="/auth" />} />
-                <Route path="/admin" element={currentUser?.isAdmin ? <AdminPanel /> : <Navigate to="/" />} />
+                <Route path="/admin" element={currentUser?.isAdmin ? <AdminPanel 
+                  payments={payments}
+                  users={users}
+                  appConfig={appConfig}
+                  setAppConfig={setAppConfig}
+                  setAllUsers={setAllUsers}
+                  currentUser={currentUser}
+                  handleLogout={handleLogout}
+                  setIsLoadingWithRef={setIsLoadingWithRef}
+                  showAlert={showAlert}
+                  showConfirm={showConfirm}
+                /> : <Navigate to="/" />} />
                 <Route path="/profile" element={currentUser ? <ProfilePage /> : <Navigate to="/auth" />} />
                 <Route path="/privacy" element={<PrivacyPolicy onBack={() => navigate('/')} />} />
                 <Route path="/terms" element={<TermsAndConditions onBack={() => navigate('/')} />} />
