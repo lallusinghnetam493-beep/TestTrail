@@ -17,6 +17,7 @@ export interface User {
   utr?: string;
   isAdmin?: boolean;
   sessionId?: string;
+  subscriptionExpiresAt?: number;
 }
 
 export interface Question {

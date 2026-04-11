@@ -320,16 +320,28 @@ const AppContent: React.FC = () => {
 
           if (userDoc && userDoc.exists()) {
             const userData = userDoc.data();
+            let subscription = userData.subscription as SubscriptionStatus;
+            const expiresAt = userData.subscriptionExpiresAt?.toMillis ? userData.subscriptionExpiresAt.toMillis() : userData.subscriptionExpiresAt;
+            
+            // Check for expiration
+            if (subscription === SubscriptionStatus.PRO && expiresAt && expiresAt < Date.now()) {
+              console.log('Subscription expired, reverting to FREE');
+              subscription = SubscriptionStatus.FREE;
+              // Update Firestore asynchronously
+              updateDoc(doc(db, 'users', user.uid), { subscription: SubscriptionStatus.FREE }).catch(console.error);
+            }
+
             const formattedUser: User = {
               id: user.uid,
               fullName: userData.fullName,
               email: userData.email,
               password: userData.password,
-              subscription: userData.subscription as SubscriptionStatus,
+              subscription: subscription,
               trialsUsed: userData.trialsUsed,
               isAdmin: userData.isAdmin,
               utr: userData.utr,
-              sessionId: userData.sessionId
+              sessionId: userData.sessionId,
+              subscriptionExpiresAt: expiresAt
             };
             setCurrentUser(formattedUser);
             localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
@@ -740,10 +752,14 @@ const AppContent: React.FC = () => {
             
             if (verifyData.status === 'success') {
               // 4. Update local state (Server already updated Firestore)
-              const updatedUser = { ...currentUser, subscription: SubscriptionStatus.PRO };
+              const updatedUser: User = { 
+                ...currentUser, 
+                subscription: SubscriptionStatus.PRO,
+                subscriptionExpiresAt: verifyData.expiresAt
+              };
               setCurrentUser(updatedUser);
               localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
-              showAlert("Success", "Welcome to Pro! Your subscription is now active.");
+              showAlert("Success", "Welcome to Pro! Your subscription is now active for 30 days.");
               navigate('/dashboard');
             } else {
               showAlert("Payment Verification Failed", verifyData.message || "Could not verify payment.");
@@ -1446,7 +1462,7 @@ const AppContent: React.FC = () => {
               <div className="pt-2 space-y-1">
                 <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Subscription Plan</p>
                 <div className="text-6xl font-black text-white tracking-tighter">₹{appConfig.subscriptionPrice}</div>
-                <p className="text-slate-400 font-bold">Lifetime Access</p>
+                <p className="text-slate-400 font-bold">30 Days Access</p>
               </div>
 
               <div className="pt-4">
@@ -1456,7 +1472,7 @@ const AppContent: React.FC = () => {
                   className="inline-flex items-center justify-center gap-3 w-full py-6 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50"
                 >
                   {isLoading ? <Loader2 className="animate-spin" /> : <Zap size={24} />}
-                  {isLoading ? 'Processing...' : 'Pay with Razorpay'}
+                  {isLoading ? 'Processing...' : 'Buy Pro'}
                 </button>
               </div>
             </div>

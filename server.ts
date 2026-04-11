@@ -97,11 +97,15 @@ async function startServer() {
         .digest("hex");
 
       if (razorpay_signature === expectedSign) {
+        const expiresAt = new Date();
+        expiresAt.setDate(expiresAt.getDate() + 30);
+
         await firestore.collection("users").doc(userId).update({
           subscription: "PRO",
+          subscriptionExpiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
-        res.json({ status: "success" });
+        res.json({ status: "success", expiresAt: expiresAt.getTime() });
       } else {
         res.status(400).json({ status: "failure" });
       }
