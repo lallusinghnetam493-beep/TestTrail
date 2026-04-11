@@ -147,6 +147,202 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   return errInfo;
 }
 
+// --- Helper Components ---
+const formatTime = (s: number) => {
+  const mins = Math.floor(s / 60);
+  const secs = s % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+};
+
+const TestInterface = ({ 
+  currentTest, 
+  activeQuestionIndex, 
+  userAnswers, 
+  timeLeft, 
+  setActiveQuestionIndex, 
+  setUserAnswers, 
+  submitTest 
+}: {
+  currentTest: any;
+  activeQuestionIndex: number;
+  userAnswers: number[];
+  timeLeft: number;
+  setActiveQuestionIndex: React.Dispatch<React.SetStateAction<number>>;
+  setUserAnswers: React.Dispatch<React.SetStateAction<number[]>>;
+  submitTest: () => void;
+}) => {
+  if (!currentTest) return null;
+  const q = currentTest.questions[activeQuestionIndex];
+  const selected = userAnswers[activeQuestionIndex];
+  const hasSelected = selected !== -1;
+
+  return (
+    <div className="pt-24 pb-12 px-6 min-h-screen flex flex-col max-w-4xl mx-auto">
+      <div className="flex justify-between items-center mb-4 glass p-4 rounded-2xl">
+        <div className="space-y-0.5">
+          <h3 className="font-bold text-slate-400 text-xs uppercase tracking-widest">Mock Test ({currentTest.language})</h3>
+          <div className="font-bold text-lg truncate max-w-[150px] md:max-w-none">{currentTest.topic}</div>
+        </div>
+        {currentTest.isPro && (
+          <div className="flex items-center gap-2 px-4 py-2 bg-indigo-500/20 text-indigo-400 rounded-xl font-bold">
+            <Timer size={24} />
+            <span className="text-xl tabular-nums">{formatTime(timeLeft)}</span>
+          </div>
+        )}
+        <div className="text-right">
+           <div className="text-slate-400 text-xs font-bold uppercase tracking-widest">Progress</div>
+           <div className="text-xl font-bold">{activeQuestionIndex + 1}/{currentTest.questions.length}</div>
+        </div>
+      </div>
+
+      {/* Progress Bar */}
+      <div className="w-full h-1.5 bg-white/5 rounded-full mb-8 overflow-hidden">
+        <motion.div 
+          initial={{ width: 0 }}
+          animate={{ width: `${((activeQuestionIndex + 1) / currentTest.questions.length) * 100}%` }}
+          className="h-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]"
+        />
+      </div>
+
+      <AnimatePresence mode="wait">
+        <motion.div 
+          key={activeQuestionIndex}
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -20 }}
+          transition={{ duration: 0.2 }}
+          className="flex-1 glass p-8 rounded-[2rem] space-y-8 shadow-[0_0_50px_rgba(99,102,241,0.1)]"
+        >
+          <div className="space-y-4">
+            <div className="text-xs font-black text-indigo-400 uppercase tracking-widest">Question {activeQuestionIndex + 1}</div>
+            <h2 className="text-xl md:text-2xl font-bold leading-relaxed">{q.text}</h2>
+          </div>
+
+          <div className="grid grid-cols-1 gap-3">
+            {q.options.map((opt: string, idx: number) => (
+              <button
+                key={idx}
+                onClick={() => {
+                  const newAns = [...userAnswers];
+                  newAns[activeQuestionIndex] = idx;
+                  setUserAnswers(newAns);
+                }}
+                className={`w-full p-5 text-left rounded-2xl border transition-all flex items-center justify-between group ${
+                  selected === idx 
+                    ? 'bg-indigo-500/20 border-indigo-500 text-white' 
+                    : 'bg-white/5 border-white/10 text-slate-400 hover:border-white/30 hover:bg-white/[0.07]'
+                }`}
+              >
+                <div className="flex items-center gap-4">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold border ${
+                    selected === idx ? 'bg-indigo-500 border-indigo-400 text-white' : 'bg-white/5 border-white/10'
+                  }`}>{String.fromCharCode(65 + idx)}</div>
+                  <span className="font-medium">{opt}</span>
+                </div>
+                {selected === idx && <Check size={20} />}
+              </button>
+            ))}
+          </div>
+        </motion.div>
+      </AnimatePresence>
+
+      <div className="mt-8 flex gap-4">
+        <button disabled={activeQuestionIndex === 0} onClick={() => setActiveQuestionIndex(prev => prev - 1)} className="px-6 py-4 glass rounded-2xl font-bold hover:bg-white/10 disabled:opacity-30 flex items-center gap-2">
+          <ChevronLeft size={20} /> Previous
+        </button>
+        {activeQuestionIndex < currentTest.questions.length - 1 ? (
+          <button disabled={!hasSelected} onClick={() => setActiveQuestionIndex(prev => prev + 1)} className={`flex-1 py-4 rounded-2xl font-bold shadow-lg flex items-center justify-center gap-2 transition-all ${hasSelected ? 'bg-indigo-500 hover:bg-indigo-600 shadow-indigo-500/20' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}>
+            Next <ChevronRight size={20} />
+          </button>
+        ) : (
+          <button disabled={!hasSelected} onClick={submitTest} className={`flex-1 py-4 rounded-2xl font-bold shadow-lg transition-all ${hasSelected ? 'bg-green-500 hover:bg-green-600 shadow-green-500/20' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}>
+            Finish & See Results
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const ResultPage = ({ lastResult, navigate }: { lastResult: TestResult | null, navigate: any }) => {
+  const [reviewMode, setReviewMode] = useState(false);
+  if (!lastResult) return null;
+
+  if (reviewMode) {
+    return (
+      <div className="pt-24 pb-12 px-6 max-w-4xl mx-auto space-y-8">
+         <div className="flex items-center justify-between">
+            <h2 className="text-3xl font-bold">Answer Review</h2>
+            <button onClick={() => setReviewMode(false)} className="px-4 py-2 glass rounded-xl font-bold">Back to Result</button>
+         </div>
+         <div className="space-y-6">
+            {lastResult.questions.map((q, qIdx) => {
+              const userAns = lastResult.userAnswers[qIdx];
+              const isCorrect = userAns === q.correctAnswerIndex;
+              return (
+                <div key={q.id} className={`glass p-6 rounded-2xl border-l-4 ${isCorrect ? 'border-l-green-500' : 'border-l-red-500'}`}>
+                  <p className="font-bold text-lg mb-4">{q.text}</p>
+                  <div className="grid grid-cols-1 gap-2">
+                     {q.options.map((opt, oIdx) => (
+                       <div key={oIdx} className={`p-3 rounded-xl border flex items-center gap-3 ${oIdx === q.correctAnswerIndex ? 'bg-green-500/10 border-green-500/30 text-green-400' : oIdx === userAns ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-white/5 border-white/5 text-slate-500'}`}>
+                         <span className="font-bold">{String.fromCharCode(65 + oIdx)}.</span>
+                         <span>{opt}</span>
+                       </div>
+                     ))}
+                  </div>
+                </div>
+              )
+            })}
+         </div>
+      </div>
+    )
+  }
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="pt-24 pb-12 px-6 flex flex-col items-center max-w-3xl mx-auto space-y-8"
+    >
+      <div className="text-center space-y-2">
+        <motion.div 
+          initial={{ scale: 0 }}
+          animate={{ scale: 1 }}
+          transition={{ type: "spring", stiffness: 200, damping: 10 }}
+          className="w-20 h-20 bg-yellow-500/20 rounded-full mx-auto flex items-center justify-center text-yellow-500"
+        >
+          <Trophy size={48} />
+        </motion.div>
+        <h2 className="text-4xl font-black">Test Completed!</h2>
+        <p className="text-slate-400">Great effort! Performance breakdown for <span className="text-white font-bold">{lastResult.examName}</span></p>
+      </div>
+      <div className="w-full grid grid-cols-2 md:grid-cols-4 gap-4">
+         {[
+           { label: 'Score', value: `${lastResult.score}/${lastResult.total}`, color: 'text-indigo-400' },
+           { label: 'Correct', value: lastResult.correct, color: 'text-green-400' },
+           { label: 'Wrong', value: lastResult.wrong, color: 'text-red-400' },
+           { label: 'Percentage', value: `${lastResult.percentage.toFixed(0)}%`, color: 'text-purple-400' },
+         ].map((stat, i) => (
+           <motion.div 
+             key={i} 
+             whileHover={{ y: -5, scale: 1.02 }}
+             className="glass-card p-6 rounded-[2rem] text-center space-y-1"
+           >
+             <div className="text-[10px] text-slate-500 font-black uppercase tracking-widest">{stat.label}</div>
+             <div className={`text-2xl font-black ${stat.color}`}>{stat.value}</div>
+           </motion.div>
+         ))}
+      </div>
+      <div className="w-full glass p-8 rounded-[2rem] space-y-6">
+        <div className="flex flex-col gap-4">
+          <button onClick={() => setReviewMode(true)} className="w-full py-4 glass hover:bg-white/10 rounded-2xl font-bold">Review Answers</button>
+          <button onClick={() => navigate('/dashboard')} className="w-full py-4 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-bold shadow-xl shadow-indigo-500/30">Back to Dashboard</button>
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
 const App: React.FC = () => {
   return (
     <BrowserRouter>
@@ -1823,185 +2019,6 @@ const AppContent: React.FC = () => {
     );
   };
 
-  const TestInterface = () => {
-    if (!currentTest) return null;
-    const q = currentTest.questions[activeQuestionIndex];
-    const selected = userAnswers[activeQuestionIndex];
-    const hasSelected = selected !== -1;
-
-    const formatTime = (s: number) => {
-      const mins = Math.floor(s / 60);
-      const secs = s % 60;
-      return `${mins}:${secs.toString().padStart(2, '0')}`;
-    };
-
-    return (
-      <div className="pt-24 pb-12 px-6 min-h-screen flex flex-col max-w-4xl mx-auto">
-        <div className="flex justify-between items-center mb-4 glass p-4 rounded-2xl">
-          <div className="space-y-0.5">
-            <h3 className="font-bold text-slate-400 text-xs uppercase tracking-widest">Mock Test ({currentTest.language})</h3>
-            <div className="font-bold text-lg truncate max-w-[150px] md:max-w-none">{currentTest.topic}</div>
-          </div>
-          {currentTest.isPro && (
-            <div className="flex items-center gap-2 px-4 py-2 bg-indigo-500/20 text-indigo-400 rounded-xl font-bold">
-              <Timer size={24} />
-              <span className="text-xl tabular-nums">{formatTime(timeLeft)}</span>
-            </div>
-          )}
-          <div className="text-right">
-             <div className="text-slate-400 text-xs font-bold uppercase tracking-widest">Progress</div>
-             <div className="text-xl font-bold">{activeQuestionIndex + 1}/{currentTest.questions.length}</div>
-          </div>
-        </div>
-
-        {/* Progress Bar */}
-        <div className="w-full h-1.5 bg-white/5 rounded-full mb-8 overflow-hidden">
-          <motion.div 
-            initial={{ width: 0 }}
-            animate={{ width: `${((activeQuestionIndex + 1) / currentTest.questions.length) * 100}%` }}
-            className="h-full bg-indigo-500 shadow-[0_0_10px_rgba(99,102,241,0.5)]"
-          />
-        </div>
-
-        <AnimatePresence mode="wait">
-          <motion.div 
-            key={activeQuestionIndex}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            transition={{ duration: 0.2 }}
-            className="flex-1 glass p-8 rounded-[2rem] space-y-8 shadow-[0_0_50px_rgba(99,102,241,0.1)]"
-          >
-            <div className="space-y-4">
-              <div className="text-xs font-black text-indigo-400 uppercase tracking-widest">Question {activeQuestionIndex + 1}</div>
-              <h2 className="text-xl md:text-2xl font-bold leading-relaxed">{q.text}</h2>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3">
-              {q.options.map((opt, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => {
-                    const newAns = [...userAnswers];
-                    newAns[activeQuestionIndex] = idx;
-                    setUserAnswers(newAns);
-                  }}
-                  className={`w-full p-5 text-left rounded-2xl border transition-all flex items-center justify-between group ${
-                    selected === idx 
-                      ? 'bg-indigo-500/20 border-indigo-500 text-white' 
-                      : 'bg-white/5 border-white/10 text-slate-400 hover:border-white/30 hover:bg-white/[0.07]'
-                  }`}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold border ${
-                      selected === idx ? 'bg-indigo-500 border-indigo-400 text-white' : 'bg-white/5 border-white/10'
-                    }`}>{String.fromCharCode(65 + idx)}</div>
-                    <span className="font-medium">{opt}</span>
-                  </div>
-                  {selected === idx && <Check size={20} />}
-                </button>
-              ))}
-            </div>
-          </motion.div>
-        </AnimatePresence>
-
-        <div className="mt-8 flex gap-4">
-          <button disabled={activeQuestionIndex === 0} onClick={() => setActiveQuestionIndex(prev => prev - 1)} className="px-6 py-4 glass rounded-2xl font-bold hover:bg-white/10 disabled:opacity-30 flex items-center gap-2">
-            <ChevronLeft size={20} /> Previous
-          </button>
-          {activeQuestionIndex < currentTest.questions.length - 1 ? (
-            <button disabled={!hasSelected} onClick={() => setActiveQuestionIndex(prev => prev + 1)} className={`flex-1 py-4 rounded-2xl font-bold shadow-lg flex items-center justify-center gap-2 transition-all ${hasSelected ? 'bg-indigo-500 hover:bg-indigo-600 shadow-indigo-500/20' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}>
-              Next <ChevronRight size={20} />
-            </button>
-          ) : (
-            <button disabled={!hasSelected} onClick={submitTest} className={`flex-1 py-4 rounded-2xl font-bold shadow-lg transition-all ${hasSelected ? 'bg-green-500 hover:bg-green-600 shadow-green-500/20' : 'bg-slate-800 text-slate-500 cursor-not-allowed'}`}>
-              Finish & See Results
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const ResultPage = () => {
-    if (!lastResult) return null;
-    const [reviewMode, setReviewMode] = useState(false);
-
-    if (reviewMode) {
-      return (
-        <div className="pt-24 pb-12 px-6 max-w-4xl mx-auto space-y-8">
-           <div className="flex items-center justify-between">
-              <h2 className="text-3xl font-bold">Answer Review</h2>
-              <button onClick={() => setReviewMode(false)} className="px-4 py-2 glass rounded-xl font-bold">Back to Result</button>
-           </div>
-           <div className="space-y-6">
-              {lastResult.questions.map((q, qIdx) => {
-                const userAns = lastResult.userAnswers[qIdx];
-                const isCorrect = userAns === q.correctAnswerIndex;
-                return (
-                  <div key={q.id} className={`glass p-6 rounded-2xl border-l-4 ${isCorrect ? 'border-l-green-500' : 'border-l-red-500'}`}>
-                    <p className="font-bold text-lg mb-4">{q.text}</p>
-                    <div className="grid grid-cols-1 gap-2">
-                       {q.options.map((opt, oIdx) => (
-                         <div key={oIdx} className={`p-3 rounded-xl border flex items-center gap-3 ${oIdx === q.correctAnswerIndex ? 'bg-green-500/10 border-green-500/30 text-green-400' : oIdx === userAns ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-white/5 border-white/5 text-slate-500'}`}>
-                           <span className="font-bold">{String.fromCharCode(65 + oIdx)}.</span>
-                           <span>{opt}</span>
-                         </div>
-                       ))}
-                    </div>
-                  </div>
-                )
-              })}
-           </div>
-        </div>
-      )
-    }
-
-    return (
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="pt-24 pb-12 px-6 flex flex-col items-center max-w-3xl mx-auto space-y-8"
-      >
-        <div className="text-center space-y-2">
-          <motion.div 
-            initial={{ scale: 0 }}
-            animate={{ scale: 1 }}
-            transition={{ type: "spring", stiffness: 200, damping: 10 }}
-            className="w-20 h-20 bg-yellow-500/20 rounded-full mx-auto flex items-center justify-center text-yellow-500"
-          >
-            <Trophy size={48} />
-          </motion.div>
-          <h2 className="text-4xl font-black">Test Completed!</h2>
-          <p className="text-slate-400">Great effort! Performance breakdown for <span className="text-white font-bold">{lastResult.examName}</span></p>
-        </div>
-        <div className="w-full grid grid-cols-2 md:grid-cols-4 gap-4">
-           {[
-             { label: 'Score', value: `${lastResult.score}/${lastResult.total}`, color: 'text-indigo-400' },
-             { label: 'Correct', value: lastResult.correct, color: 'text-green-400' },
-             { label: 'Wrong', value: lastResult.wrong, color: 'text-red-400' },
-             { label: 'Percentage', value: `${lastResult.percentage.toFixed(0)}%`, color: 'text-purple-400' },
-           ].map((stat, i) => (
-             <motion.div 
-               key={i} 
-               whileHover={{ y: -5, scale: 1.02 }}
-               className="glass-card p-6 rounded-[2rem] text-center space-y-1"
-             >
-               <div className="text-[10px] text-slate-500 font-black uppercase tracking-widest">{stat.label}</div>
-               <div className={`text-2xl font-black ${stat.color}`}>{stat.value}</div>
-             </motion.div>
-           ))}
-        </div>
-        <div className="w-full glass p-8 rounded-[2rem] space-y-6">
-          <div className="flex flex-col gap-4">
-            <button onClick={() => setReviewMode(true)} className="w-full py-4 glass hover:bg-white/10 rounded-2xl font-bold">Review Answers</button>
-            <button onClick={() => navigate('/dashboard')} className="w-full py-4 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-bold shadow-xl shadow-indigo-500/30">Back to Dashboard</button>
-          </div>
-        </div>
-      </motion.div>
-    );
-  };
-
   const Modal = () => (
     <AnimatePresence>
       {modal.isOpen && (
@@ -2069,8 +2086,16 @@ const AppContent: React.FC = () => {
                 <Route path="/auth" element={<Auth />} />
                 <Route path="/dashboard" element={currentUser ? <Dashboard /> : <Navigate to="/auth" />} />
                 <Route path="/payment" element={currentUser ? <Payment /> : <Navigate to="/auth" />} />
-                <Route path="/test" element={currentUser ? <TestInterface /> : <Navigate to="/auth" />} />
-                <Route path="/result" element={currentUser ? <ResultPage /> : <Navigate to="/auth" />} />
+                <Route path="/test" element={currentUser ? <TestInterface 
+                  currentTest={currentTest}
+                  activeQuestionIndex={activeQuestionIndex}
+                  userAnswers={userAnswers}
+                  timeLeft={timeLeft}
+                  setActiveQuestionIndex={setActiveQuestionIndex}
+                  setUserAnswers={setUserAnswers}
+                  submitTest={submitTest}
+                /> : <Navigate to="/auth" />} />
+                <Route path="/result" element={currentUser ? <ResultPage lastResult={lastResult} navigate={navigate} /> : <Navigate to="/auth" />} />
                 <Route path="/admin" element={currentUser?.isAdmin ? <AdminPanel /> : <Navigate to="/" />} />
                 <Route path="/profile" element={currentUser ? <ProfilePage /> : <Navigate to="/auth" />} />
                 <Route path="/privacy" element={<PrivacyPolicy onBack={() => navigate('/')} />} />
