@@ -558,21 +558,24 @@ const AppContent: React.FC = () => {
   const startTest = async (topic: string, isPro: boolean, lang: 'English' | 'Hindi', difficulty: Difficulty) => {
     if (!currentUser) return;
 
+    const fullTrialsCount = testResults.filter(r => r.total === 100).length;
+    const quickTrialsCount = testResults.filter(r => r.total === 5).length;
+
     // Restriction Logic
     if (isPro) {
       if (currentUser.subscription === SubscriptionStatus.PENDING) {
         showAlert("Verification Pending", "Your payment is currently being verified by our team. Please wait for approval to access full 100-question tests.");
         return;
       }
-      if (currentUser.subscription === SubscriptionStatus.FREE && currentUser.trialsUsed >= 1) {
+      if (currentUser.subscription === SubscriptionStatus.FREE && fullTrialsCount >= 1) {
         showAlert("Trial Limit Reached", "You have used your 1 free 100-question trial. Please upgrade to Pro for unlimited access.");
         navigate('/payment');
         return;
       }
     } else {
-      // For 5-Q Quick Test, limit to 50 trials
-      if (currentUser.subscription === SubscriptionStatus.FREE && currentUser.trialsUsed >= 50) {
-        showAlert("Trial Limit Reached", "You have used your 50 free 5-question trials. Please upgrade to Pro for unlimited access.");
+      // For 5-Q Quick Test, limit to 3 trials
+      if (currentUser.subscription === SubscriptionStatus.FREE && quickTrialsCount >= 3) {
+        showAlert("Trial Limit Reached", "You have used your 3 free 5-question trials. Please upgrade to Pro for unlimited access.");
         navigate('/payment');
         return;
       }
@@ -1330,22 +1333,22 @@ const AppContent: React.FC = () => {
 
               <div className="flex flex-col sm:flex-row gap-5 pt-4">
                 <button 
-                  disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && currentUser?.trialsUsed >= 50)}
+                  disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && testResults.filter(r => r.total === 5).length >= 3)}
                   onClick={() => startTest(topic, false, testLanguage, testDifficulty)}
                   className="flex-1 py-5 glass hover:bg-white/10 rounded-2xl font-black text-slate-300 border border-white/10 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
                 >
                   {isLoading ? <Loader2 className="animate-spin" /> : <Zap size={20} />}
                   {isLoading ? 'Generating...' : 
-                   (currentUser?.subscription === SubscriptionStatus.FREE ? `5-Q Quick Test (${Math.max(0, 50 - (currentUser?.trialsUsed || 0))} left)` : `5-Q Quick Test`)}
+                   (currentUser?.subscription === SubscriptionStatus.FREE ? `5-Q Quick Test (${Math.max(0, 3 - testResults.filter(r => r.total === 5).length)} left)` : `5-Q Quick Test`)}
                 </button>
                 <button 
-                  disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && currentUser?.trialsUsed >= 1)}
+                  disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && testResults.filter(r => r.total === 100).length >= 1)}
                   onClick={() => startTest(topic, true, testLanguage, testDifficulty)}
                   className="flex-1 py-5 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-white shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:bg-slate-800 disabled:text-slate-500 flex items-center justify-center gap-3"
                 >
                   {isLoading ? <Loader2 className="animate-spin" /> : <Trophy size={20} />}
                   {isLoading ? 'Generating...' : 
-                   (currentUser?.subscription === SubscriptionStatus.FREE ? `Full 100-Q Trial (${1 - (currentUser?.trialsUsed || 0)} left)` : 
+                   (currentUser?.subscription === SubscriptionStatus.FREE ? `Full 100-Q Trial (${Math.max(0, 1 - testResults.filter(r => r.total === 100).length)} left)` : 
                     currentUser?.subscription === SubscriptionStatus.PENDING ? `Verification Pending` : 
                     `Full 100-Q Test`)}
                 </button>
