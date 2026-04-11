@@ -1824,15 +1824,6 @@ const AppContent: React.FC = () => {
               </button>
             )}
             <button 
-              onClick={() => {
-                localStorage.clear();
-                window.location.reload();
-              }}
-              className="w-full py-4 bg-white/5 hover:bg-white/10 text-slate-400 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all border border-white/10"
-            >
-              <Trash2 size={18} /> Clear App Cache
-            </button>
-            <button 
               onClick={handleLogout}
               className="w-full py-4 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all border border-red-500/20"
             >
