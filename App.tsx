@@ -165,6 +165,15 @@ const AppContent: React.FC = () => {
       try {
         // Use getDocFromServer to bypass cache and check real connectivity
         await getDocFromServer(doc(db, 'config', 'connection_test'));
+        
+        // Also test API connectivity
+        const apiPing = await fetch('/api/ping');
+        if (apiPing.ok) {
+          const data = await apiPing.json();
+          console.log('API Connectivity Test:', data.status);
+        } else {
+          console.warn('API Connectivity Test failed with status:', apiPing.status);
+        }
       } catch (error: any) {
         if (error.message?.includes('the client is offline')) {
           console.error("Firestore is offline. Check Firebase configuration.");
@@ -669,8 +678,11 @@ const AppContent: React.FC = () => {
     
     setIsLoadingWithRef(true);
     try {
+      const paymentUrl = `${window.location.origin}/api/payment/order`;
+      console.log("Initiating payment request to:", paymentUrl);
+      
       // 1. Create Order on Server
-      const response = await fetch('/api/payment/order', {
+      const response = await fetch(paymentUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -709,8 +721,11 @@ const AppContent: React.FC = () => {
             setIsLoadingWithRef(true);
             setLoadingMessage('Verifying payment...');
             
+            const verifyUrl = `${window.location.origin}/api/payment/verify`;
+            console.log("Verifying payment at:", verifyUrl);
+            
             // 3. Verify Payment on Server
-            const verifyRes = await fetch('/api/payment/verify', {
+            const verifyRes = await fetch(verifyUrl, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({

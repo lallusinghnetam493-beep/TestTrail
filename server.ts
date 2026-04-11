@@ -51,15 +51,19 @@ async function startServer() {
     key_secret: process.env.RAZORPAY_KEY_SECRET || "MISSING_KEY_SECRET",
   });
 
-  // API Router
-  const apiRouter = express.Router();
+  // --- API ROUTES (Directly on app) ---
+  
+  app.get("/api/ping", (req, res) => {
+    res.json({ status: "pong", timestamp: new Date().toISOString() });
+  });
 
-  apiRouter.get("/health", (req, res) => {
+  app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
   });
 
   // Create Razorpay Order
-  apiRouter.post("/payment/order", async (req, res) => {
+  app.post("/api/payment/order", async (req, res) => {
+    console.log("Order request received:", req.body);
     try {
       const { amount, currency = "INR" } = req.body;
       
@@ -68,6 +72,7 @@ async function startServer() {
       }
 
       if (!process.env.VITE_RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+        console.error("Missing Razorpay Keys");
         return res.status(500).json({ 
           error: "Razorpay API keys are not configured in environment variables.",
           details: "Please add VITE_RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to your environment."
@@ -81,6 +86,7 @@ async function startServer() {
       };
 
       const order = await razorpay.orders.create(options);
+      console.log("Order created successfully:", order.id);
       res.json(order);
     } catch (error: any) {
       console.error("Razorpay Order Error:", error);
@@ -92,7 +98,8 @@ async function startServer() {
   });
 
   // Verify Razorpay Payment
-  apiRouter.post("/payment/verify", async (req, res) => {
+  app.post("/api/payment/verify", async (req, res) => {
+    console.log("Verify request received:", req.body);
     try {
       const { 
         razorpay_order_id, 
@@ -123,8 +130,10 @@ async function startServer() {
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
 
+        console.log("Payment verified for user:", userId);
         res.json({ status: "success", message: "Payment verified and subscription updated" });
       } else {
+        console.warn("Invalid signature for order:", razorpay_order_id);
         res.status(400).json({ status: "failure", message: "Invalid signature" });
       }
     } catch (error: any) {
@@ -136,11 +145,9 @@ async function startServer() {
     }
   });
 
-  // Mount API Router
-  app.use("/api", apiRouter);
-
-  // API 404 Handler - MUST be after API Router but before Vite/Static
+  // API 404 Handler - MUST be after API routes but before Vite/Static
   app.use("/api", (req, res) => {
+    console.log(`API 404: ${req.method} ${req.url}`);
     res.status(404).json({ error: `API route not found: ${req.method} ${req.url}` });
   });
 
