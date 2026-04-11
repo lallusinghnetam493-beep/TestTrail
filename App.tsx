@@ -678,11 +678,8 @@ const AppContent: React.FC = () => {
     
     setIsLoadingWithRef(true);
     try {
-      const paymentUrl = `${window.location.origin}/api/payment/order`;
-      console.log("Initiating payment request to:", paymentUrl);
-      
       // 1. Create Order on Server
-      const response = await fetch(paymentUrl, {
+      const response = await fetch('/api/payment/order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -721,11 +718,8 @@ const AppContent: React.FC = () => {
             setIsLoadingWithRef(true);
             setLoadingMessage('Verifying payment...');
             
-            const verifyUrl = `${window.location.origin}/api/payment/verify`;
-            console.log("Verifying payment at:", verifyUrl);
-            
             // 3. Verify Payment on Server
-            const verifyRes = await fetch(verifyUrl, {
+            const verifyRes = await fetch('/api/payment/verify', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
