@@ -122,7 +122,7 @@ async function startServer() {
           userId,
           orderId: razorpay_order_id,
           paymentId: razorpay_payment_id,
-          amount: orderDetails.amount / 100, // Convert from paise
+          amount: (orderDetails.amount as number) / 100, // Convert from paise
           currency: orderDetails.currency,
           status: "captured",
           timestamp: admin.firestore.FieldValue.serverTimestamp()

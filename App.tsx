@@ -953,6 +953,13 @@ const AppContent: React.FC = () => {
         name: "TestTrail AI",
         description: "Pro Subscription",
         order_id: order.id,
+        modal: {
+          ondismiss: () => {
+            setIsLoadingWithRef(false);
+          },
+          escape: false,
+          backdropclose: false
+        },
         handler: async (response: any) => {
           try {
             setIsLoadingWithRef(true);
@@ -1000,14 +1007,25 @@ const AppContent: React.FC = () => {
         },
         prefill: {
           name: currentUser.fullName,
-          email: currentUser.email
+          email: currentUser.email,
+          contact: "" // Optional: can add phone if collected
         },
         theme: {
           color: "#6366f1"
         }
       };
 
+      if (!(window as any).Razorpay) {
+        throw new Error("Razorpay SDK not loaded. Please check your internet connection.");
+      }
+
       const rzp = new (window as any).Razorpay(options);
+      
+      rzp.on('payment.failed', function (response: any) {
+        showAlert("Payment Failed", response.error.description || "Payment was unsuccessful.");
+        setIsLoadingWithRef(false);
+      });
+
       rzp.open();
       
     } catch (err: any) {
@@ -1681,15 +1699,15 @@ const AppContent: React.FC = () => {
           className="w-full max-w-xl space-y-10"
         >
           <div className="text-center space-y-3">
-            <h2 className="text-5xl font-black tracking-tight">Upgrade to <span className="gradient-text">Pro</span></h2>
-            <p className="text-slate-400 font-medium">Unlock unlimited AI generation and compete at elite levels.</p>
+            <h2 className="text-4xl md:text-5xl font-black tracking-tight">Upgrade to <span className="gradient-text">Pro</span></h2>
+            <p className="text-slate-400 font-medium text-sm md:text-base">Unlock unlimited AI generation and compete at elite levels.</p>
           </div>
           
-          <div className="glass p-10 rounded-[3rem] space-y-10 text-center shadow-2xl shadow-indigo-500/10 border-white/10">
+          <div className="glass p-6 md:p-10 rounded-[2.5rem] md:rounded-[3rem] space-y-10 text-center shadow-2xl shadow-indigo-500/10 border-white/10">
             <div className="space-y-8">
               <div className="pt-2 space-y-1">
                 <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Subscription Plan</p>
-                <div className="text-6xl font-black text-white tracking-tighter">₹{appConfig.subscriptionPrice}</div>
+                <div className="text-5xl md:text-6xl font-black text-white tracking-tighter">₹{appConfig.subscriptionPrice}</div>
                 <p className="text-slate-400 font-bold">30 Days Access</p>
               </div>
 
