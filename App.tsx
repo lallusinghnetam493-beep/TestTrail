@@ -92,7 +92,7 @@ const CURRENT_USER_KEY = 'tt_current_user';
 // --- Mock Initial Config ---
 const DEFAULT_CONFIG: AppConfig = {
   upiId: '8839191411@ibl',
-  subscriptionPrice: 5,
+  subscriptionPrice: 1,
 };
 
 
