@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, Component } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Trophy, 
@@ -352,13 +352,23 @@ const App: React.FC = () => {
 };
 
 // --- Error Boundary Component ---
-class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, error: any }> {
-  constructor(props: any) {
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: any;
+}
+
+class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  public state: ErrorBoundaryState = { hasError: false, error: null };
+
+  constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false, error: null };
   }
 
-  static getDerivedStateFromError(error: any) {
+  static getDerivedStateFromError(error: any): ErrorBoundaryState {
     return { hasError: true, error };
   }
 
@@ -391,7 +401,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
         </div>
       );
     }
-    return this.props.children;
+    return (this as any).props.children;
   }
 }
 
@@ -2012,6 +2022,24 @@ const AppContent: React.FC = () => {
           >
             <Trash2 size={16} /> Clear All Data
           </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+          {[
+            { label: 'Total Users', val: users.length, icon: UserCircle, color: 'text-blue-400' },
+            { label: 'Pro Users', val: users.filter((u: any) => u.subscription === 'PRO').length, icon: ShieldCheck, color: 'text-indigo-400' },
+            { label: 'Total Revenue', val: `₹${payments.reduce((acc: number, p: any) => acc + (p.amount || 0), 0)}`, icon: CreditCard, color: 'text-green-400' }
+          ].map((stat, i) => (
+            <div key={i} className="glass p-6 rounded-[2rem] border-white/5 flex items-center gap-4">
+              <div className={cn("p-3 rounded-xl bg-white/5", stat.color)}>
+                <stat.icon size={24} />
+              </div>
+              <div>
+                <div className="text-2xl font-black tracking-tighter">{stat.val}</div>
+                <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">{stat.label}</div>
+              </div>
+            </div>
+          ))}
         </div>
         
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
