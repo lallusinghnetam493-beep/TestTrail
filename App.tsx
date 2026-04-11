@@ -351,6 +351,50 @@ const App: React.FC = () => {
   );
 };
 
+// --- Error Boundary Component ---
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, error: any }> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("App Crash:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center space-y-6">
+          <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center text-red-500">
+            <AlertCircle size={40} />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-black text-white">Something went wrong</h2>
+            <p className="text-slate-400 max-w-xs mx-auto">The application encountered an unexpected error and needs to restart.</p>
+          </div>
+          <button 
+            onClick={() => window.location.reload()}
+            className="px-8 py-4 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-bold text-white shadow-xl shadow-indigo-500/20 transition-all"
+          >
+            Reload Application
+          </button>
+          {process.env.NODE_ENV !== 'production' && (
+            <pre className="mt-8 p-4 bg-black/40 rounded-xl text-left text-[10px] text-red-400 overflow-auto max-w-full">
+              {this.state.error?.toString()}
+            </pre>
+          )}
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const AppContent: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -918,6 +962,12 @@ const AppContent: React.FC = () => {
     
     setIsLoadingWithRef(true);
     try {
+      const keyId = import.meta.env.VITE_RAZORPAY_KEY_ID;
+      if (!keyId) {
+        throw new Error("Razorpay Key ID is missing. Please check your environment variables.");
+      }
+      console.log("Initiating payment with Key ID:", keyId.substring(0, 8) + "...");
+
       // 1. Create Order on Server
       const response = await fetch('/api/payment/order', {
         method: 'POST',
@@ -1016,17 +1066,28 @@ const AppContent: React.FC = () => {
       };
 
       if (!(window as any).Razorpay) {
-        throw new Error("Razorpay SDK not loaded. Please check your internet connection.");
+        setIsLoadingWithRef(false);
+        showAlert("Payment Error", "Razorpay SDK is not loaded. Please refresh the page and try again.");
+        return;
       }
 
       const rzp = new (window as any).Razorpay(options);
       
       rzp.on('payment.failed', function (response: any) {
-        showAlert("Payment Failed", response.error.description || "Payment was unsuccessful.");
+        console.error("Payment Failed:", response.error);
+        showAlert("Payment Failed", response.error.description || "Payment was unsuccessful. Please try again.");
         setIsLoadingWithRef(false);
       });
 
-      rzp.open();
+      // On mobile, popups can be blocked if triggered after an async call.
+      // Razorpay's open() handles this usually, but we ensure it's called.
+      try {
+        rzp.open();
+      } catch (e: any) {
+        console.error("RZP Open Error:", e);
+        setIsLoadingWithRef(false);
+        showAlert("Error", "Could not open payment window. Please check if popups are blocked.");
+      }
       
     } catch (err: any) {
       showAlert("Payment Error", "Could not initiate payment: " + err.message);
@@ -2134,7 +2195,8 @@ const AppContent: React.FC = () => {
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200">
+    <ErrorBoundary>
+      <div className="min-h-screen bg-slate-950 text-slate-200">
         <Navbar />
         <Modal />
         <div className="fixed top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-500/10 rounded-full blur-[120px] pointer-events-none -z-10"></div>
@@ -2235,6 +2297,7 @@ const AppContent: React.FC = () => {
            </div>
         </footer>
       </div>
+    </ErrorBoundary>
   );
 };
 

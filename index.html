@@ -7,58 +7,6 @@
     <title>TestTrail - AI Mock Test Platform</title>
     <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><defs><linearGradient id=%22g%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22><stop offset=%220%25%22 stop-color=%22%236366f1%22/><stop offset=%22100%25%22 stop-color=%22%239333ea%22/></linearGradient></defs><rect width=%22100%22 height=%22100%22 rx=%2225%22 fill=%22url(%23g)%22/><text x=%2250%22 y=%2255%22 font-family=%22Arial, sans-serif%22 font-weight=%22900%22 font-size=%2265%22 fill=%22white%22 text-anchor=%22middle%22 dominant-baseline=%22middle%22>T</text></svg>">
-    <script>
-      // Fix for libraries trying to overwrite window.fetch in environments where it is read-only
-      (function() {
-        const originalFetch = window.fetch;
-        
-        function protect(obj, prop, name) {
-          try {
-            if (!obj) return;
-            const descriptor = Object.getOwnPropertyDescriptor(obj, prop);
-            if (descriptor && !descriptor.configurable) {
-              console.warn('Property ' + prop + ' is not configurable on ' + name);
-              return;
-            }
-            Object.defineProperty(obj, prop, {
-              configurable: true,
-              enumerable: true,
-              get: function() { return originalFetch; },
-              set: function(v) { 
-                console.warn('Prevented overwrite of ' + prop + ' on ' + name);
-              }
-            });
-          } catch (e) {
-            console.warn('Failed to protect ' + prop + ' on ' + name);
-          }
-        }
-
-        protect(window, 'fetch', 'window');
-        protect(globalThis, 'fetch', 'globalThis');
-        if (typeof Window !== 'undefined') protect(Window.prototype, 'fetch', 'Window.prototype');
-
-        // Global fallback to prevent the app from crashing on fetch assignment
-        window.addEventListener('error', function(event) {
-          const msg = event.message || (event.error && event.error.message) || '';
-          if (msg.includes('fetch') && (msg.includes('getter') || msg.includes('read only'))) {
-            console.warn('Intercepted and suppressed fetch overwrite error:', msg);
-            event.preventDefault();
-            event.stopPropagation();
-            return true;
-          }
-        }, true);
-
-        // Also handle unhandledrejection just in case
-        window.addEventListener('unhandledrejection', function(event) {
-          const msg = (event.reason && event.reason.message) || '';
-          if (msg.includes('fetch') && (msg.includes('getter') || msg.includes('read only'))) {
-            console.warn('Intercepted and suppressed fetch overwrite promise rejection:', msg);
-            event.preventDefault();
-            event.stopPropagation();
-          }
-        });
-      })();
-    </script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
