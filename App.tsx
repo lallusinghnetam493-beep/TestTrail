@@ -565,22 +565,21 @@ const AppContent: React.FC = () => {
     initApp();
 
     // 3. Firebase Auth State Listener
+    let userUnsubscribe: (() => void) | null = null;
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       console.log('Firebase Auth State Change:', user ? 'Logged In' : 'Logged Out');
       
-      if (user) {
-        try {
-          // Fetch latest user data from Firestore
-          let userDoc;
-          try {
-            userDoc = await getDoc(doc(db, 'users', user.uid));
-          } catch (err) {
-            const info = handleFirestoreError(err, OperationType.GET, `users/${user.uid}`);
-            throw new Error(JSON.stringify(info));
-          }
+      if (userUnsubscribe) {
+        userUnsubscribe();
+        userUnsubscribe = null;
+      }
 
-          if (userDoc && userDoc.exists()) {
-            const userData = userDoc.data();
+      if (user) {
+        // Set up real-time listener for user document
+        userUnsubscribe = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
+          if (docSnap.exists()) {
+            const userData = docSnap.data();
             let subscription = userData.subscription as SubscriptionStatus;
             const expiresAt = userData.subscriptionExpiresAt?.toMillis ? userData.subscriptionExpiresAt.toMillis() : userData.subscriptionExpiresAt;
             
@@ -588,7 +587,6 @@ const AppContent: React.FC = () => {
             if (subscription === SubscriptionStatus.PRO && expiresAt && expiresAt < Date.now()) {
               console.log('Subscription expired, reverting to FREE');
               subscription = SubscriptionStatus.FREE;
-              // Update Firestore asynchronously
               updateDoc(doc(db, 'users', user.uid), { subscription: SubscriptionStatus.FREE }).catch(console.error);
             }
 
@@ -604,6 +602,7 @@ const AppContent: React.FC = () => {
               sessionId: userData.sessionId,
               subscriptionExpiresAt: expiresAt
             };
+            
             setCurrentUser(formattedUser);
             localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(formattedUser));
             
@@ -612,7 +611,7 @@ const AppContent: React.FC = () => {
               navigate(formattedUser.isAdmin ? '/admin' : '/dashboard');
             }
           } else {
-            // Fallback if doc doesn't exist yet (e.g. during signup sync)
+            // Fallback if doc doesn't exist yet
             const isAdmin = user.email === 'lallusinghnetam0@gmail.com';
             const fallbackUser: User = {
               id: user.uid,
@@ -624,9 +623,9 @@ const AppContent: React.FC = () => {
             };
             setCurrentUser(fallbackUser);
           }
-        } catch (err) {
-          console.error('Error fetching user doc:', err);
-        }
+        }, (err) => {
+          console.error("User doc listener error:", err);
+        });
       } else {
         setCurrentUser(null);
         localStorage.removeItem(CURRENT_USER_KEY);
@@ -638,6 +637,7 @@ const AppContent: React.FC = () => {
 
     return () => {
       unsubscribe();
+      if (userUnsubscribe) userUnsubscribe();
       clearTimeout(timer);
     };
   }, []);
