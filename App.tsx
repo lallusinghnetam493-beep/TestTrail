@@ -600,7 +600,8 @@ const AppContent: React.FC = () => {
               isAdmin: userData.isAdmin,
               utr: userData.utr,
               sessionId: userData.sessionId,
-              subscriptionExpiresAt: expiresAt
+              subscriptionExpiresAt: expiresAt,
+              razorpayPaymentId: userData.razorpayPaymentId
             };
             
             setCurrentUser(formattedUser);

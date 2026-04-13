@@ -18,6 +18,7 @@ export interface User {
   isAdmin?: boolean;
   sessionId?: string;
   subscriptionExpiresAt?: number;
+  razorpayPaymentId?: string;
 }
 
 export interface Question {

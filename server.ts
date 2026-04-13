@@ -113,6 +113,7 @@ async function startServer() {
         // Update user status
         await firestore.collection("users").doc(userId).update({
           subscription: "PRO",
+          razorpayPaymentId: razorpay_payment_id,
           subscriptionExpiresAt: admin.firestore.Timestamp.fromDate(expiresAt),
           updatedAt: admin.firestore.FieldValue.serverTimestamp()
         });
