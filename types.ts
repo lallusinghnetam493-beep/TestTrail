@@ -14,11 +14,11 @@ export interface User {
   password?: string;
   subscription: SubscriptionStatus;
   trialsUsed: number;
-  utr?: string;
   isAdmin?: boolean;
   sessionId?: string;
   subscriptionExpiresAt?: number;
-  razorpayPaymentId?: string;
+  payment_id?: string;
+  updated_at?: any;
 }
 
 export interface Question {

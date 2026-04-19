@@ -415,19 +415,10 @@ const AppContent: React.FC = () => {
       try {
         // Use getDocFromServer to bypass cache and check real connectivity
         await getDocFromServer(doc(db, 'config', 'connection_test'));
-        
-        // Also test API connectivity
-        const apiPing = await fetch('/api/ping');
-        if (apiPing.ok) {
-          const data = await apiPing.json();
-          console.log('API Connectivity Test:', data.status);
-        } else {
-          console.warn('API Connectivity Test failed with status:', apiPing.status);
-        }
+        console.log('Firestore connectivity verified');
       } catch (error: any) {
         if (error.message?.includes('the client is offline')) {
-          console.error("Firestore is offline. Check Firebase configuration.");
-          setError("Database connection failed. Please refresh or check your internet.");
+          console.warn("Firestore is currently in offline mode. The app will use cached data.");
         }
       }
     };
@@ -440,7 +431,6 @@ const AppContent: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [appConfig, setAppConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   const [testResults, setTestResults] = useState<TestResult[]>([]);
-  const [payments, setPayments] = useState<any[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [loadingMessage, setLoadingMessage] = useState('Please wait...');
@@ -498,64 +488,43 @@ const AppContent: React.FC = () => {
       }
     }, 30000);
 
-    const initApp = async () => {
-      console.log('Initializing app with Firebase...');
+    const initApp = async (retries = 3) => {
+      console.log(`Initializing app with Firebase (Attempt ${4 - retries})...`);
       
       try {
-        // Connection Test
-        try {
-          await getDocFromServer(doc(db, 'config', 'global'));
-          console.log('Firestore connection test successful');
-        } catch (error: any) {
-          if (error.message?.includes('the client is offline')) {
-            console.error("Please check your Firebase configuration. The client is offline.");
-          }
-          console.warn('Firestore connection test warning:', error.message);
+        // 1. Initial User Check from LocalStorage (for faster UI)
+        const savedUser = localStorage.getItem(CURRENT_USER_KEY);
+        if (savedUser) {
+          setCurrentUser(JSON.parse(savedUser));
         }
 
-        // 1. Load Config from Firestore
+        // 2. Load Config from Firestore
         let configDoc;
         try {
           configDoc = await getDoc(doc(db, 'config', 'global'));
-        } catch (err) {
+        } catch (err: any) {
+          if (retries > 0 && err.message?.includes('offline')) {
+            console.warn('Firestore offline, retrying in 2s...');
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            return initApp(retries - 1);
+          }
           const info = handleFirestoreError(err, OperationType.GET, 'config/global');
           throw new Error(JSON.stringify(info));
         }
 
         if (configDoc && configDoc.exists()) {
           const data = configDoc.data();
-          // If the price is still 100 (old default), update it to 5 as requested
-          if (data.subscriptionPrice === 100) {
-            await updateDoc(doc(db, 'config', 'global'), { subscriptionPrice: 5 });
-            setAppConfig({
-              upiId: data.upiId,
-              subscriptionPrice: 5
-            });
-          } else {
-            setAppConfig({
-              upiId: data.upiId,
-              subscriptionPrice: data.subscriptionPrice
-            });
-          }
+          setAppConfig({
+            upiId: data.upiId || DEFAULT_CONFIG.upiId,
+            subscriptionPrice: data.subscriptionPrice || DEFAULT_CONFIG.subscriptionPrice
+          });
         } else {
-          // Initialize default config if missing - only if we can
-          try {
-            await setDoc(doc(db, 'config', 'global'), DEFAULT_CONFIG);
-            setAppConfig(DEFAULT_CONFIG);
-          } catch (err) {
-            console.warn('Could not initialize global config (likely not admin), using defaults');
-            setAppConfig(DEFAULT_CONFIG);
-          }
-        }
-
-        // 2. Initial User Check from LocalStorage (for faster UI)
-        const savedUser = localStorage.getItem(CURRENT_USER_KEY);
-        if (savedUser) {
-          setCurrentUser(JSON.parse(savedUser));
+          setAppConfig(DEFAULT_CONFIG);
         }
       } catch (err) {
         console.error('Error initializing app:', err);
-        setError(err instanceof Error ? err.message : 'Failed to initialize app');
+        // Don't block the whole app if just config fails
+        setAppConfig(DEFAULT_CONFIG);
       } finally {
         clearTimeout(timer);
         setIsLoadingWithRef(false);
@@ -580,16 +549,8 @@ const AppContent: React.FC = () => {
         userUnsubscribe = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
           if (docSnap.exists()) {
             const userData = docSnap.data();
-            let subscription = userData.subscription as SubscriptionStatus;
-            const expiresAt = userData.subscriptionExpiresAt?.toMillis ? userData.subscriptionExpiresAt.toMillis() : userData.subscriptionExpiresAt;
+            const subscription = userData.subscription as SubscriptionStatus;
             
-            // Check for expiration
-            if (subscription === SubscriptionStatus.PRO && expiresAt && expiresAt < Date.now()) {
-              console.log('Subscription expired, reverting to FREE');
-              subscription = SubscriptionStatus.FREE;
-              updateDoc(doc(db, 'users', user.uid), { subscription: SubscriptionStatus.FREE }).catch(console.error);
-            }
-
             const formattedUser: User = {
               id: user.uid,
               fullName: userData.fullName,
@@ -598,10 +559,9 @@ const AppContent: React.FC = () => {
               subscription: subscription,
               trialsUsed: userData.trialsUsed,
               isAdmin: userData.isAdmin,
-              utr: userData.utr,
               sessionId: userData.sessionId,
-              subscriptionExpiresAt: expiresAt,
-              razorpayPaymentId: userData.razorpayPaymentId
+              payment_id: userData.payment_id,
+              updated_at: userData.updated_at
             };
             
             setCurrentUser(formattedUser);
@@ -666,24 +626,6 @@ const AppContent: React.FC = () => {
 
     return () => unsubscribe();
   }, [currentUser]);
-
-  // --- Real-time listener for payments (Admin only) ---
-  useEffect(() => {
-    if (location.pathname === '/admin' && currentUser?.isAdmin) {
-      const q = query(collection(db, 'payments'), orderBy('timestamp', 'desc'));
-      const unsubscribe = onSnapshot(q, (snapshot) => {
-        const paymentsList = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          timestamp: doc.data().timestamp?.toDate() || new Date()
-        }));
-        setPayments(paymentsList);
-      }, (err) => {
-        handleFirestoreError(err, OperationType.LIST, 'payments');
-      });
-      return () => unsubscribe();
-    }
-  }, [location.pathname, currentUser]);
 
   // --- Scroll to top on page change ---
   useEffect(() => {
@@ -751,7 +693,6 @@ const AppContent: React.FC = () => {
           subscription: isAdmin ? SubscriptionStatus.PRO : SubscriptionStatus.FREE,
           trialsUsed: 0,
           isAdmin: isAdmin,
-          utr: '',
           sessionId: newSessionId
         };
 
@@ -1108,34 +1049,6 @@ const AppContent: React.FC = () => {
   };
 
   // --- Admin Handlers ---
-  const approvePayment = async (userId: string) => {
-    setIsLoadingWithRef(true);
-    try {
-      await updateDoc(doc(db, 'users', userId), {
-        subscription: SubscriptionStatus.PRO,
-        utr: null
-      });
-
-      const newUsers = users.map(u => {
-        if (u.id === userId) {
-          return { ...u, subscription: SubscriptionStatus.PRO, utr: undefined };
-        }
-        return u;
-      });
-      setUsers(newUsers);
-      
-      if (currentUser?.id === userId) {
-        const updatedUser = { ...currentUser, subscription: SubscriptionStatus.PRO, utr: undefined };
-        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
-        setCurrentUser(updatedUser);
-      }
-      showAlert("Success", "User approved successfully!");
-    } catch (err: any) {
-      showAlert("Error", "Approval failed: " + err.message);
-    } finally {
-      setIsLoadingWithRef(false);
-    }
-  };
 
   // --- UI Components ---
   const Navbar = () => (
@@ -1926,7 +1839,6 @@ const AppContent: React.FC = () => {
   };
 
   const AdminPanel = ({ 
-    payments, 
     users, 
     appConfig, 
     setAppConfig, 
@@ -2025,11 +1937,10 @@ const AppContent: React.FC = () => {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           {[
             { label: 'Total Users', val: users.length, icon: UserCircle, color: 'text-blue-400' },
-            { label: 'Pro Users', val: users.filter((u: any) => u.subscription === 'PRO').length, icon: ShieldCheck, color: 'text-indigo-400' },
-            { label: 'Total Revenue', val: `₹${payments.reduce((acc: number, p: any) => acc + (p.amount || 0), 0)}`, icon: CreditCard, color: 'text-green-400' }
+            { label: 'Pro Users', val: users.filter((u: any) => u.subscription === 'PRO').length, icon: ShieldCheck, color: 'text-indigo-400' }
           ].map((stat, i) => (
             <div key={i} className="glass p-6 rounded-[2rem] border-white/5 flex items-center gap-4">
               <div className={cn("p-3 rounded-xl bg-white/5", stat.color)}>
@@ -2070,34 +1981,6 @@ const AppContent: React.FC = () => {
                 >
                   Save Settings
                 </button>
-              </div>
-            </div>
-
-            <div className="glass p-8 rounded-[2.5rem] space-y-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-green-500/10 rounded-xl text-green-400">
-                  <CreditCard size={20} />
-                </div>
-                <h3 className="font-bold text-xl text-white">Recent Payments</h3>
-              </div>
-              <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                {payments.length === 0 ? (
-                  <p className="text-slate-500 text-xs font-bold text-center py-8">No payments recorded yet.</p>
-                ) : (
-                  payments.map((pay: any) => (
-                    <div key={pay.id} className="p-4 bg-white/[0.02] border border-white/5 rounded-2xl space-y-2">
-                      <div className="flex justify-between items-start">
-                        <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">₹{pay.amount}</div>
-                        <div className="text-[8px] text-slate-500 font-mono">{new Date(pay.timestamp).toLocaleString()}</div>
-                      </div>
-                      <div className="text-[10px] text-slate-300 font-bold truncate">User: {users.find((u: any) => u.id === pay.userId)?.fullName || pay.userId}</div>
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-[8px] text-slate-600 font-mono truncate">ID: {pay.paymentId}</div>
-                        <span className="text-[8px] px-1.5 py-0.5 bg-green-500/10 text-green-400 rounded-md font-black uppercase tracking-widest border border-green-500/20">Captured</span>
-                      </div>
-                    </div>
-                  ))
-                )}
               </div>
             </div>
           </div>
@@ -2255,7 +2138,6 @@ const AppContent: React.FC = () => {
                 /> : <Navigate to="/auth" />} />
                 <Route path="/result" element={currentUser ? <ResultPage lastResult={lastResult} navigate={navigate} /> : <Navigate to="/auth" />} />
                 <Route path="/admin" element={currentUser?.isAdmin ? <AdminPanel 
-                  payments={payments}
                   users={users}
                   appConfig={appConfig}
                   setAppConfig={setAppConfig}

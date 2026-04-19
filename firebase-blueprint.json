@@ -12,7 +12,8 @@
         "subscription": { "type": "string", "enum": ["FREE", "PRO", "PENDING"] },
         "trialsUsed": { "type": "number" },
         "isAdmin": { "type": "boolean" },
-        "utr": { "type": "string" },
+        "payment_id": { "type": "string", "description": "Razorpay payment ID" },
+        "updated_at": { "type": "string", "format": "date-time" },
         "sessionId": { "type": "string" }
       },
       "required": ["id", "email", "subscription"]
@@ -43,21 +44,6 @@
         "upiId": { "type": "string" },
         "subscriptionPrice": { "type": "number" }
       }
-    },
-    "Payment": {
-      "title": "Payment",
-      "description": "Transaction record for subscriptions",
-      "type": "object",
-      "properties": {
-        "userId": { "type": "string" },
-        "orderId": { "type": "string" },
-        "paymentId": { "type": "string" },
-        "amount": { "type": "number" },
-        "currency": { "type": "string" },
-        "status": { "type": "string" },
-        "timestamp": { "type": "string", "format": "date-time" }
-      },
-      "required": ["userId", "orderId", "paymentId", "amount"]
     }
   },
   "firestore": {
@@ -72,10 +58,6 @@
     "/config/global": {
       "schema": "Config",
       "description": "Global app settings"
-    },
-    "/payments/{paymentId}": {
-      "schema": "Payment",
-      "description": "Payment transactions"
     }
   }
 }
