@@ -17,20 +17,36 @@ try {
 
 // Initialize Firebase Admin
 let firestore: any;
-if (firebaseConfig.projectId) {
-  if (!admin.apps.length) {
-    admin.initializeApp({
-      projectId: firebaseConfig.projectId,
-    });
-  }
-  // Use the named database if provided
-  if (firebaseConfig.firestoreDatabaseId) {
-    firestore = getFirestore(admin.app(), firebaseConfig.firestoreDatabaseId);
+
+function getDb() {
+  if (firestore) return firestore;
+
+  if (firebaseConfig.projectId) {
+    if (!admin.apps.length) {
+      admin.initializeApp({
+        projectId: firebaseConfig.projectId,
+      });
+    }
+    // Use the named database if provided
+    if (firebaseConfig.firestoreDatabaseId) {
+      firestore = getFirestore(admin.app(), firebaseConfig.firestoreDatabaseId);
+    } else {
+      firestore = getFirestore();
+    }
+    return firestore;
   } else {
-    firestore = getFirestore();
+    // Attempt fallback to default initialization if config is missing but environment might have it
+    if (!admin.apps.length) {
+      try {
+        admin.initializeApp();
+        firestore = getFirestore();
+        return firestore;
+      } catch (e) {
+        console.error("Firebase fallback initialization failed:", e);
+      }
+    }
   }
-} else {
-  console.error("Firebase Project ID missing.");
+  return null;
 }
 
 const app = express();
@@ -116,7 +132,13 @@ async function startServer() {
 
       if (isValid) {
         // Double check user exists first to provide better error
-        const userRef = firestore.collection("users").doc(userId);
+        const db = getDb();
+        if (!db) {
+          console.error("[Payment] Firestore could not be initialized");
+          return res.status(500).json({ status: "failure", message: "Server error: Database connection failed" });
+        }
+
+        const userRef = db.collection("users").doc(userId);
         const userDoc = await userRef.get();
         
         if (!userDoc.exists) {
