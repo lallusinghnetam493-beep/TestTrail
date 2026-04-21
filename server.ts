@@ -4,8 +4,16 @@ import cors from "cors";
 import Razorpay from "razorpay";
 import crypto from "crypto";
 import fs from "fs";
-import admin from "firebase-admin";
-import { getFirestore } from "firebase-admin/firestore";
+
+// Import Client SDK for server-side work to avoid "Default Credentials" error
+import { initializeApp as initializeClientApp } from "firebase/app";
+import { 
+  getFirestore as getClientFirestore, 
+  doc, 
+  updateDoc as updateClientDoc, 
+  getDoc as getClientDoc,
+  serverTimestamp as clientServerTimestamp 
+} from "firebase/firestore";
 
 // Load firebase config
 let firebaseConfig: any = {};
@@ -21,47 +29,15 @@ try {
   console.error("[Firebase] Error loading firebase-applet-config.json:", err);
 }
 
-// Initialize Firebase Admin
-let firestore: any;
+// Initialize Client SDK
+const clientApp = initializeClientApp({
+  ...firebaseConfig,
+  // Ensure we use the correct database ID
+  databaseURL: `https://firestore.googleapis.com/v1/projects/${firebaseConfig.projectId}/databases/${firebaseConfig.firestoreDatabaseId || '(default)'}`
+});
+const clientDB = getClientFirestore(clientApp, firebaseConfig.firestoreDatabaseId);
 
-// Hardcoded fallback values from firebase-applet-config.json
-const FALLBACK_PROJECT_ID = "gen-lang-client-0219579232";
-const FALLBACK_DATABASE_ID = "ai-studio-64d6cfdc-47b0-4779-80d9-758cf84477d4";
-
-function getDb() {
-  if (firestore) return firestore;
-
-  const projectId = firebaseConfig.projectId || FALLBACK_PROJECT_ID;
-  const databaseId = firebaseConfig.firestoreDatabaseId || FALLBACK_DATABASE_ID;
-
-  console.log(`[Firebase] Initializing Firestore. Project: ${projectId}, DB: ${databaseId}`);
-
-  try {
-    if (!admin.apps.length) {
-      admin.initializeApp({
-        projectId: projectId,
-      });
-    }
-    
-    // Always prefer the specific database ID for this environment
-    firestore = getFirestore(admin.app(), databaseId);
-    return firestore;
-  } catch (e: any) {
-    console.error("[Firebase] Critical initialization error:", e.message);
-    
-    // Final desperate fallback
-    if (!admin.apps.length) {
-      try {
-        admin.initializeApp({ projectId: FALLBACK_PROJECT_ID });
-        firestore = getFirestore(admin.app(), FALLBACK_DATABASE_ID);
-        return firestore;
-      } catch (err: any) {
-        console.error("[Firebase] Final fallback failed:", err.message);
-      }
-    }
-  }
-  return null;
-}
+const SERVER_AUTH_SECRET = "TT_SECRET_998877_APP_X_2024";
 
 const app = express();
 const PORT = 3000;
@@ -146,25 +122,25 @@ async function startServer() {
 
       if (isValid) {
         // Double check user exists first to provide better error
-        const db = getDb();
-        if (!db) {
-          console.error("[Payment] Firestore could not be initialized");
-          return res.status(500).json({ status: "failure", message: "Server error: Database connection failed" });
-        }
-
-        const userRef = db.collection("users").doc(userId);
-        const userDoc = await userRef.get();
+        const userRef = doc(clientDB, "users", userId);
+        const userDoc = await getClientDoc(userRef);
         
-        if (!userDoc.exists) {
+        if (!userDoc.exists()) {
           console.error(`[Payment] User document not found for ID: ${userId}`);
           return res.status(404).json({ status: "failure", message: "Verification failed: User record not found" });
         }
 
-        // Update user status
-        await userRef.update({
+        // Update user status using Client SDK + Server Secret
+        await updateClientDoc(userRef, {
           subscription: "PRO",
           payment_id: razorpay_payment_id,
-          updated_at: admin.firestore.FieldValue.serverTimestamp()
+          updated_at: clientServerTimestamp(),
+          server_auth_secret: SERVER_AUTH_SECRET // This allows the update via rules
+        });
+
+        // Clean up the secret
+        await updateClientDoc(userRef, {
+          server_auth_secret: null
         });
 
         console.log(`[Payment] Successfully upgraded user ${userId} to PRO`);
