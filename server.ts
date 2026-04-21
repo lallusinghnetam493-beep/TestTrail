@@ -12,7 +12,8 @@ import {
   doc, 
   updateDoc as updateClientDoc, 
   getDoc as getClientDoc,
-  serverTimestamp as clientServerTimestamp 
+  serverTimestamp as clientServerTimestamp,
+  deleteField as clientDeleteField
 } from "firebase/firestore";
 
 // Load firebase config
@@ -121,30 +122,37 @@ async function startServer() {
       console.log(`[Payment] Signature validation result: ${isValid}`);
 
       if (isValid) {
-        // Double check user exists first to provide better error
+        console.log(`[Payment] Signature OK. Upgrading user ${userId}...`);
         const userRef = doc(clientDB, "users", userId);
-        const userDoc = await getClientDoc(userRef);
-        
-        if (!userDoc.exists()) {
-          console.error(`[Payment] User document not found for ID: ${userId}`);
-          return res.status(404).json({ status: "failure", message: "Verification failed: User record not found" });
+
+        try {
+          // Update user status using Client SDK + Server Secret
+          // We bypass the read check because unauthenticated server cannot read user profiles
+          console.log(`[Payment] Sending update with secret...`);
+          await updateClientDoc(userRef, {
+            subscription: "PRO",
+            payment_id: razorpay_payment_id,
+            updated_at: clientServerTimestamp(),
+            server_auth_secret: SERVER_AUTH_SECRET // This allows the update via rules
+          });
+
+          // Clean up the secret
+          console.log(`[Payment] Cleaning up secret...`);
+          await updateClientDoc(userRef, {
+            server_auth_secret: clientDeleteField()
+          });
+
+          console.log(`[Payment] Successfully upgraded user ${userId} to PRO`);
+          res.json({ status: "success" });
+        } catch (updateErr: any) {
+          console.error(`[Payment] Update error:`, updateErr.message);
+          
+          if (updateErr.message.includes("NOT_FOUND")) {
+            return res.status(404).json({ status: "failure", message: "Verification failed: User record not found" });
+          }
+          
+          return res.status(400).json({ status: "failure", message: "Permission Error: " + updateErr.message });
         }
-
-        // Update user status using Client SDK + Server Secret
-        await updateClientDoc(userRef, {
-          subscription: "PRO",
-          payment_id: razorpay_payment_id,
-          updated_at: clientServerTimestamp(),
-          server_auth_secret: SERVER_AUTH_SECRET // This allows the update via rules
-        });
-
-        // Clean up the secret
-        await updateClientDoc(userRef, {
-          server_auth_secret: null
-        });
-
-        console.log(`[Payment] Successfully upgraded user ${userId} to PRO`);
-        res.json({ status: "success" });
       } else {
         console.warn(`[Payment] Signature Mismatch!`);
         console.warn(`[Payment] Expected: ${expectedSign}`);
