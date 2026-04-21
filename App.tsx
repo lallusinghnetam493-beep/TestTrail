@@ -433,6 +433,7 @@ const AppContent: React.FC = () => {
   const [testResults, setTestResults] = useState<TestResult[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState('Please wait...');
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -547,6 +548,7 @@ const AppContent: React.FC = () => {
       if (user) {
         // Set up real-time listener for user document
         userUnsubscribe = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
+          setIsAuthChecking(false);
           if (docSnap.exists()) {
             const userData = docSnap.data();
             const subscription = userData.subscription as SubscriptionStatus;
@@ -586,8 +588,10 @@ const AppContent: React.FC = () => {
           }
         }, (err) => {
           console.error("User doc listener error:", err);
+          setIsAuthChecking(false);
         });
       } else {
+        setIsAuthChecking(false);
         setCurrentUser(null);
         localStorage.removeItem(CURRENT_USER_KEY);
         if (location.pathname !== '/' && location.pathname !== '/auth') {
@@ -2110,6 +2114,13 @@ const AppContent: React.FC = () => {
       <div className="min-h-screen bg-slate-950 text-slate-200">
         <Navbar />
         <Modal />
+
+        {isAuthChecking && (
+          <div className="fixed inset-0 z-[150] bg-slate-950 flex items-center justify-center">
+            <div className="w-12 h-12 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
+          </div>
+        )}
+
         <div className="fixed top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-500/10 rounded-full blur-[120px] pointer-events-none -z-10"></div>
         <div className="fixed bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-purple-500/10 rounded-full blur-[120px] pointer-events-none -z-10"></div>
         <main className="relative">
