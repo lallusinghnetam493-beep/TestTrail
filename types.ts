@@ -16,7 +16,6 @@ export interface User {
   trialsUsed: number;
   isAdmin?: boolean;
   sessionId?: string;
-  subscriptionExpiresAt?: number;
   payment_id?: string;
   updated_at?: any;
 }

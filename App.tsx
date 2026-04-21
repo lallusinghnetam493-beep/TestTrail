@@ -991,12 +991,11 @@ const AppContent: React.FC = () => {
               // 4. Update local state (Server already updated Firestore)
               const updatedUser: User = { 
                 ...currentUser, 
-                subscription: SubscriptionStatus.PRO,
-                subscriptionExpiresAt: verifyData.expiresAt
+                subscription: SubscriptionStatus.PRO
               };
               setCurrentUser(updatedUser);
               localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
-              showAlert("Success", "Welcome to Pro! Your subscription is now active for 30 days.");
+              showAlert("Success", "Welcome to Pro! Your subscription is now active.");
               navigate('/dashboard');
             } else {
               showAlert("Payment Verification Failed", verifyData.message || "Could not verify payment.");
