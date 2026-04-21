@@ -9,40 +9,54 @@ import { getFirestore } from "firebase-admin/firestore";
 
 // Load firebase config
 let firebaseConfig: any = {};
+const configPath = path.join(process.cwd(), "firebase-applet-config.json");
 try {
-  firebaseConfig = JSON.parse(fs.readFileSync("./firebase-applet-config.json", "utf-8"));
+  if (fs.existsSync(configPath)) {
+    firebaseConfig = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+    console.log(`[Firebase] Loaded config for project: ${firebaseConfig.projectId}`);
+  } else {
+    console.error(`[Firebase] Config file not found at: ${configPath}`);
+  }
 } catch (err) {
-  console.error("Error loading firebase-applet-config.json:", err);
+  console.error("[Firebase] Error loading firebase-applet-config.json:", err);
 }
 
 // Initialize Firebase Admin
 let firestore: any;
 
+// Hardcoded fallback values from firebase-applet-config.json
+const FALLBACK_PROJECT_ID = "gen-lang-client-0219579232";
+const FALLBACK_DATABASE_ID = "ai-studio-64d6cfdc-47b0-4779-80d9-758cf84477d4";
+
 function getDb() {
   if (firestore) return firestore;
 
-  if (firebaseConfig.projectId) {
+  const projectId = firebaseConfig.projectId || FALLBACK_PROJECT_ID;
+  const databaseId = firebaseConfig.firestoreDatabaseId || FALLBACK_DATABASE_ID;
+
+  console.log(`[Firebase] Initializing Firestore. Project: ${projectId}, DB: ${databaseId}`);
+
+  try {
     if (!admin.apps.length) {
       admin.initializeApp({
-        projectId: firebaseConfig.projectId,
+        projectId: projectId,
       });
     }
-    // Use the named database if provided
-    if (firebaseConfig.firestoreDatabaseId) {
-      firestore = getFirestore(admin.app(), firebaseConfig.firestoreDatabaseId);
-    } else {
-      firestore = getFirestore();
-    }
+    
+    // Always prefer the specific database ID for this environment
+    firestore = getFirestore(admin.app(), databaseId);
     return firestore;
-  } else {
-    // Attempt fallback to default initialization if config is missing but environment might have it
+  } catch (e: any) {
+    console.error("[Firebase] Critical initialization error:", e.message);
+    
+    // Final desperate fallback
     if (!admin.apps.length) {
       try {
-        admin.initializeApp();
-        firestore = getFirestore();
+        admin.initializeApp({ projectId: FALLBACK_PROJECT_ID });
+        firestore = getFirestore(admin.app(), FALLBACK_DATABASE_ID);
         return firestore;
-      } catch (e) {
-        console.error("Firebase fallback initialization failed:", e);
+      } catch (err: any) {
+        console.error("[Firebase] Final fallback failed:", err.message);
       }
     }
   }
