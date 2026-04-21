@@ -959,6 +959,10 @@ const AppContent: React.FC = () => {
         name: "TestTrail AI",
         description: "Pro Subscription",
         order_id: order.id,
+        retry: {
+          enabled: true,
+          max_count: 3
+        },
         modal: {
           ondismiss: () => {
             setIsLoadingWithRef(false);
@@ -1039,6 +1043,7 @@ const AppContent: React.FC = () => {
       // Razorpay's open() handles this usually, but we ensure it's called.
       try {
         rzp.open();
+        // Do NOT reset loading here, wait for modal to dismiss or payment to finish
       } catch (e: any) {
         console.error("RZP Open Error:", e);
         setIsLoadingWithRef(false);
@@ -1046,9 +1051,8 @@ const AppContent: React.FC = () => {
       }
       
     } catch (err: any) {
-      showAlert("Payment Error", "Could not initiate payment: " + err.message);
-    } finally {
       setIsLoadingWithRef(false);
+      showAlert("Payment Error", "Could not initiate payment: " + err.message);
     }
   };
 
@@ -1209,541 +1213,586 @@ const AppContent: React.FC = () => {
     </nav>
   );
 
-  const Home = () => (
-    <div className="pt-32 pb-20 px-6 min-h-screen flex flex-col items-center overflow-hidden">
-      <motion.div 
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.8, ease: "easeOut" }}
-        className="max-w-5xl w-full text-center space-y-10 relative"
-      >
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-[0.3em] animate-pulse">
-          <Zap size={12} /> Next-Gen Exam Prep
-        </div>
-        
-        <h1 className="text-6xl md:text-8xl font-black leading-[0.9] tracking-tighter">
-          Conquer Govt Exams <br />
-          <span className="gradient-text">with AI Power</span>
-        </h1>
-        
-        <p className="text-slate-400 text-lg md:text-2xl max-w-3xl mx-auto leading-relaxed font-medium">
-          Generate custom mock tests for UPSC, SSC, Banking, and Railways in seconds. 
-          Real patterns, real difficulty, real results.
-        </p>
-        
-        <div className="flex flex-col sm:flex-row gap-5 justify-center items-center pt-6">
-          <motion.button 
-            whileHover={{ scale: 1.05, y: -5 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => {
-              if (currentUser) navigate(currentUser.isAdmin ? '/admin' : '/dashboard');
-              else { setAuthMode('signup'); navigate('/auth'); }
-            }}
-            className="w-full sm:w-auto px-10 py-5 bg-indigo-500 hover:bg-indigo-600 rounded-[2rem] font-black text-lg shadow-2xl shadow-indigo-500/40 transition-all flex items-center justify-center gap-3 group active:scale-95"
-          >
-            Start Mock Test <ChevronRight className="group-hover:translate-x-1 transition-transform" />
-          </motion.button>
-          <button 
-             onClick={() => {
-               if (currentUser) navigate(currentUser.isAdmin ? '/admin' : '/dashboard');
-               else { setAuthMode('signup'); navigate('/auth'); }
-             }}
-             className="w-full sm:w-auto px-10 py-5 glass rounded-[2rem] font-black text-lg hover:bg-white/10 transition-all border border-white/10 active:scale-95">
-            View Pro Pricing
-          </button>
-        </div>
+// --- Support Components (Moved Outside) ---
+interface HomeProps {
+  currentUser: User | null;
+  navigate: any;
+  setAuthMode: (mode: 'login' | 'signup' | 'forgot') => void;
+}
 
-        <div className="relative mt-32 w-full max-w-4xl mx-auto">
-           <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-[120%] h-[120%] bg-indigo-500/10 rounded-full blur-[120px] -z-10"></div>
-           <motion.div 
-             initial={{ opacity: 0, scale: 0.9 }}
-             animate={{ opacity: 1, scale: 1 }}
-             transition={{ delay: 0.4, duration: 1 }}
-             className="relative glass p-1 rounded-[3rem] border-white/10 shadow-[0_40px_100px_rgba(0,0,0,0.5)]"
-           >
-              <div className="bg-slate-900/50 rounded-[2.8rem] p-10 md:p-16 flex flex-col justify-center items-center space-y-12 overflow-hidden">
-                 <div className="p-5 bg-indigo-500/10 rounded-3xl text-indigo-400 border border-indigo-500/20 animate-float">
-                    <Brain size={64} strokeWidth={1.5} />
-                 </div>
-                 
-                 <div className="flex flex-wrap justify-center gap-3">
-                   {['SSC CGL', 'UPSC History', 'Bank PO', 'Railway Reasoning', 'Static GK'].map((tag, i) => (
-                     <motion.span 
-                       initial={{ opacity: 0, x: -20 }}
-                       animate={{ opacity: 1, x: 0 }}
-                       transition={{ delay: 0.6 + (i * 0.1) }}
-                       key={tag} 
-                       className="px-5 py-2.5 glass rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-400 border border-white/5"
-                     >
-                       {tag}
-                     </motion.span>
-                   ))}
-                 </div>
-
-              </div>
-           </motion.div>
-        </div>
-      </motion.div>
-    </div>
-  );
-
-  const Auth = () => {
-    const [fullName, setFullName] = useState('');
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
-    const [showPassword, setShowPassword] = useState(false);
-    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-    
-    return (
-      <div className="pt-32 min-h-screen px-6 flex justify-center items-start">
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="w-full max-w-md space-y-10"
+const Home: React.FC<HomeProps> = ({ currentUser, navigate, setAuthMode }) => (
+  <div className="pt-32 pb-20 px-6 min-h-screen flex flex-col items-center overflow-hidden">
+    <motion.div 
+      initial={{ opacity: 0, y: 30 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.8, ease: "easeOut" }}
+      className="max-w-5xl w-full text-center space-y-10 relative"
+    >
+      <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-[0.3em] animate-pulse">
+        <Zap size={12} /> Next-Gen Exam Prep
+      </div>
+      
+      <h1 className="text-6xl md:text-8xl font-black leading-[0.9] tracking-tighter">
+        Conquer Govt Exams <br />
+        <span className="gradient-text">with AI Power</span>
+      </h1>
+      
+      <p className="text-slate-400 text-lg md:text-2xl max-w-3xl mx-auto leading-relaxed font-medium">
+        Generate custom mock tests for UPSC, SSC, Banking, and Railways in seconds. 
+        Real patterns, real difficulty, real results.
+      </p>
+      
+      <div className="flex flex-col sm:flex-row gap-5 justify-center items-center pt-6">
+        <motion.button 
+          whileHover={{ scale: 1.05, y: -5 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => {
+            if (currentUser) navigate(currentUser.isAdmin ? '/admin' : '/dashboard');
+            else { setAuthMode('signup'); navigate('/auth'); }
+          }}
+          className="w-full sm:w-auto px-10 py-5 bg-indigo-500 hover:bg-indigo-600 rounded-[2rem] font-black text-lg shadow-2xl shadow-indigo-500/40 transition-all flex items-center justify-center gap-3 group active:scale-95"
         >
-          <div className="text-center space-y-3">
-            <h2 className="text-5xl font-black tracking-tight">
-              {authMode === 'login' ? 'Welcome Back' : authMode === 'signup' ? 'Create Account' : 'Reset Password'}
-            </h2>
-            <p className="text-slate-400 font-medium">
-              {authMode === 'login' ? 'Continue your prep journey' : authMode === 'signup' ? 'Join thousands of aspirants today' : 'Enter your email to reset password'}
-            </p>
-          </div>
-          
-          <div className="glass p-10 rounded-[3rem] space-y-8 shadow-2xl shadow-indigo-500/10 border-white/10">
-            {error && (
-              <motion.div 
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold rounded-2xl flex items-center gap-3"
-              >
-                <AlertCircle size={16} /> {error}
-              </motion.div>
-            )}
+          Start Mock Test <ChevronRight className="group-hover:translate-x-1 transition-transform" />
+        </motion.button>
+        <button 
+           onClick={() => {
+             if (currentUser) navigate(currentUser.isAdmin ? '/admin' : '/dashboard');
+             else { setAuthMode('signup'); navigate('/auth'); }
+           }}
+           className="w-full sm:w-auto px-10 py-5 glass rounded-[2rem] font-black text-lg hover:bg-white/10 transition-all border border-white/10 active:scale-95">
+          View Pro Pricing
+        </button>
+      </div>
 
-            {successMessage && (
-              <motion.div 
-                initial={{ opacity: 0, x: -10 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="p-4 bg-green-500/10 border border-green-500/20 text-green-400 text-xs font-bold rounded-2xl flex items-center gap-3"
-              >
-                <CheckCircle2 size={16} /> {successMessage}
-              </motion.div>
-            )}
-            
-            <div className="space-y-5">
-              {authMode === 'signup' && (
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Full Name</label>
-                  <input 
-                    type="text" 
-                    value={fullName}
-                    onChange={e => setFullName(e.target.value)}
-                    className="w-full px-6 py-4 bg-white/[0.03] border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500/50 transition-all font-bold"
-                    placeholder="Enter your name"
-                  />
-                </div>
-              )}
+      <div className="relative mt-32 w-full max-w-4xl mx-auto">
+         <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-[120%] h-[120%] bg-indigo-500/10 rounded-full blur-[120px] -z-10"></div>
+         <motion.div 
+           initial={{ opacity: 0, scale: 0.9 }}
+           animate={{ opacity: 1, scale: 1 }}
+           transition={{ delay: 0.4, duration: 1 }}
+           className="relative glass p-1 rounded-[3rem] border-white/10 shadow-[0_40px_100px_rgba(0,0,0,0.5)]"
+         >
+            <div className="bg-slate-900/50 rounded-[2.8rem] p-10 md:p-16 flex flex-col justify-center items-center space-y-12 overflow-hidden">
+               <div className="p-5 bg-indigo-500/10 rounded-3xl text-indigo-400 border border-indigo-500/20 animate-float">
+                  <Brain size={64} strokeWidth={1.5} />
+               </div>
+               
+               <div className="flex flex-wrap justify-center gap-3">
+                 {['SSC CGL', 'UPSC History', 'Bank PO', 'Railway Reasoning', 'Static GK'].map((tag, i) => (
+                   <motion.span 
+                     initial={{ opacity: 0, x: -20 }}
+                     animate={{ opacity: 1, x: 0 }}
+                     transition={{ delay: 0.6 + (i * 0.1) }}
+                     key={tag} 
+                     className="px-5 py-2.5 glass rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-400 border border-white/5"
+                   >
+                     {tag}
+                   </motion.span>
+                 ))}
+               </div>
+            </div>
+         </motion.div>
+      </div>
+    </motion.div>
+  </div>
+);
+
+interface AuthProps {
+  authMode: 'login' | 'signup' | 'forgot';
+  setAuthMode: (mode: 'login' | 'signup' | 'forgot') => void;
+  isLoading: boolean;
+  error: string | null;
+  successMessage: string | null;
+  setError: (err: string | null) => void;
+  handleAuth: (name: string, email: string, pass: string, confirm?: string) => Promise<void>;
+  handleResetPassword: (email: string, pass: string, confirm: string) => Promise<void>;
+  showAlert: (title: string, msg: string) => void;
+}
+
+const Auth: React.FC<AuthProps> = ({ 
+  authMode, 
+  setAuthMode, 
+  isLoading, 
+  error, 
+  successMessage, 
+  setError, 
+  handleAuth, 
+  handleResetPassword,
+  showAlert 
+}) => {
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  
+  return (
+    <div className="pt-32 min-h-screen px-6 flex justify-center items-start">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-md space-y-10"
+      >
+        <div className="text-center space-y-3">
+          <h2 className="text-5xl font-black tracking-tight">
+            {authMode === 'login' ? 'Welcome Back' : authMode === 'signup' ? 'Create Account' : 'Reset Password'}
+          </h2>
+          <p className="text-slate-400 font-medium">
+            {authMode === 'login' ? 'Continue your prep journey' : authMode === 'signup' ? 'Join thousands of aspirants today' : 'Enter your email to reset password'}
+          </p>
+        </div>
+        
+        <div className="glass p-10 rounded-[3rem] space-y-8 shadow-2xl shadow-indigo-500/10 border-white/10">
+          {error && (
+            <motion.div 
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="p-4 bg-red-500/10 border border-red-500/20 text-red-400 text-xs font-bold rounded-2xl flex items-center gap-3"
+            >
+              <AlertCircle size={16} /> {error}
+            </motion.div>
+          )}
+
+          {successMessage && (
+            <motion.div 
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="p-4 bg-green-500/10 border border-green-500/20 text-green-400 text-xs font-bold rounded-2xl flex items-center gap-3"
+            >
+              <CheckCircle2 size={16} /> {successMessage}
+            </motion.div>
+          )}
+          
+          <div className="space-y-5">
+            {authMode === 'signup' && (
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Email Address</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Full Name</label>
                 <input 
-                  type="email" 
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  className="w-full px-6 py-4 bg-white/[0.03] border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500/50 transition-all font-bold"
-                  placeholder="Enter your email"
+                  type="text" 
+                  value={fullName}
+                  onChange={e => setFullName(e.target.value)}
+                  className="w-full px-6 py-4 bg-white/[0.03] border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500/50 transition-all font-bold text-white placeholder:text-slate-600"
+                  placeholder="Enter your name"
                 />
               </div>
+            )}
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Email Address</label>
+              <input 
+                type="email" 
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                className="w-full px-6 py-4 bg-white/[0.03] border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500/50 transition-all font-bold text-white placeholder:text-slate-600"
+                placeholder="Enter your email"
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">{authMode === 'forgot' ? 'New Password' : 'Password'}</label>
+              <div className="relative">
+                <input 
+                  type={showPassword ? "text" : "password"} 
+                  value={password}
+                  onChange={e => setPassword(e.target.value)}
+                  className="w-full px-6 py-4 bg-white/[0.03] border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500/50 transition-all font-bold text-white placeholder:text-slate-600 pr-14"
+                  placeholder="••••••••"
+                />
+                <button 
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-slate-500 hover:text-slate-300 transition-colors"
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
+            </div>
+            {(authMode === 'signup' || authMode === 'forgot') && (
               <div className="space-y-2">
-                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">{authMode === 'forgot' ? 'New Password' : 'Password'}</label>
+                <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Confirm Password</label>
                 <div className="relative">
                   <input 
-                    type={showPassword ? "text" : "password"} 
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    className="w-full px-6 py-4 bg-white/[0.03] border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500/50 transition-all font-bold pr-14"
+                    type={showConfirmPassword ? "text" : "password"} 
+                    value={confirmPassword}
+                    onChange={e => setConfirmPassword(e.target.value)}
+                    className="w-full px-6 py-4 bg-white/[0.03] border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500/50 transition-all font-bold text-white placeholder:text-slate-600 pr-14"
                     placeholder="••••••••"
                   />
                   <button 
                     type="button"
-                    onClick={() => setShowPassword(!showPassword)}
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                     className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-slate-500 hover:text-slate-300 transition-colors"
                   >
-                    {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                    {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                   </button>
                 </div>
-              </div>
-              {(authMode === 'signup' || authMode === 'forgot') && (
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-500 ml-1">Confirm Password</label>
-                  <div className="relative">
-                    <input 
-                      type={showConfirmPassword ? "text" : "password"} 
-                      value={confirmPassword}
-                      onChange={e => setConfirmPassword(e.target.value)}
-                      className="w-full px-6 py-4 bg-white/[0.03] border border-white/10 rounded-2xl focus:outline-none focus:border-indigo-500/50 transition-all font-bold pr-14"
-                      placeholder="••••••••"
-                    />
-                    <button 
-                      type="button"
-                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-slate-500 hover:text-slate-300 transition-colors"
-                    >
-                      {showConfirmPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {authMode === 'login' && (
-              <div className="flex justify-end">
-                <button 
-                  onClick={() => { setAuthMode('forgot'); setError(null); }}
-                  className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
-                >
-                  Forgot Password?
-                </button>
               </div>
             )}
+          </div>
 
-            <button 
-              disabled={isLoading}
-              onClick={() => authMode === 'forgot' ? handleResetPassword(email, password, confirmPassword) : handleAuth(fullName, email, password, confirmPassword)}
-              className="w-full py-5 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 transition-all flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-50"
-            >
-              {isLoading ? <Loader2 className="animate-spin" /> : (authMode === 'login' ? 'Login Now' : authMode === 'signup' ? 'Create Account' : 'Reset Password')}
-              {!isLoading && <ArrowRight size={20} />}
-            </button>
+          {authMode === 'login' && (
+            <div className="flex justify-end">
+              <button 
+                onClick={() => { setAuthMode('forgot'); setError(null); }}
+                className="text-xs font-bold text-indigo-400 hover:text-indigo-300 transition-colors"
+              >
+                Forgot Password?
+              </button>
+            </div>
+          )}
 
-            <p className="text-center text-sm text-slate-500 font-medium">
-              {authMode === 'forgot' ? (
+          <button 
+            disabled={isLoading}
+            onClick={() => authMode === 'forgot' ? handleResetPassword(email, password, confirmPassword) : handleAuth(fullName, email, password, confirmPassword)}
+            className="w-full py-5 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 transition-all flex items-center justify-center gap-3 active:scale-[0.98] disabled:opacity-50"
+          >
+            {isLoading ? <Loader2 className="animate-spin" /> : (authMode === 'login' ? 'Login Now' : authMode === 'signup' ? 'Create Account' : 'Reset Password')}
+            {!isLoading && <ArrowRight size={20} />}
+          </button>
+
+          <p className="text-center text-sm text-slate-500 font-medium">
+            {authMode === 'forgot' ? (
+              <button 
+                onClick={() => { setAuthMode('login'); setError(null); }}
+                className="text-indigo-400 font-black hover:underline underline-offset-4"
+              >
+                Back to Login
+              </button>
+            ) : (
+              <>
+                {authMode === 'login' ? "Don't have an account?" : "Already have an account?"}{' '}
                 <button 
-                  onClick={() => { setAuthMode('login'); setError(null); }}
+                  onClick={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setError(null); }}
                   className="text-indigo-400 font-black hover:underline underline-offset-4"
                 >
-                  Back to Login
+                  {authMode === 'login' ? 'Sign Up' : 'Log In'}
                 </button>
-              ) : (
-                <>
-                  {authMode === 'login' ? "Don't have an account?" : "Already have an account?"}{' '}
-                  <button 
-                    onClick={() => { setAuthMode(authMode === 'login' ? 'signup' : 'login'); setError(null); }}
-                    className="text-indigo-400 font-black hover:underline underline-offset-4"
-                  >
-                    {authMode === 'login' ? 'Sign Up' : 'Log In'}
-                  </button>
-                </>
-              )}
-            </p>
+              </>
+            )}
+          </p>
 
-            <div className="pt-6 border-t border-white/5 flex justify-center">
-              <button 
-                onClick={() => showAlert("Connection", "Firebase connection is active.")}
-                className="text-[10px] font-black uppercase tracking-widest text-slate-600 hover:text-indigo-400 transition-colors flex items-center gap-2"
-              >
-                <Zap size={10} /> Check Server Connection
-              </button>
-            </div>
+          <div className="pt-6 border-t border-white/5 flex justify-center">
+            <button 
+              onClick={() => showAlert("Connection", "Firebase connection is active.")}
+              className="text-[10px] font-black uppercase tracking-widest text-slate-600 hover:text-indigo-400 transition-colors flex items-center gap-2"
+            >
+              <Zap size={10} /> Check Server Connection
+            </button>
           </div>
-        </motion.div>
-      </div>
-    );
-  };
+        </div>
+      </motion.div>
+    </div>
+  );
+};
 
-  const Dashboard = () => {
-    const [topic, setTopic] = useState('');
-    const [testLanguage, setTestLanguage] = useState<'English' | 'Hindi'>('English');
-    
-    return (
-      <div className="pt-32 pb-20 px-6 max-w-5xl mx-auto space-y-12">
-        <motion.div 
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6"
-        >
-          <div className="space-y-1">
-            <h2 className="text-4xl font-black tracking-tight">Hello, {currentUser?.fullName.split(' ')[0]}!</h2>
-            <p className="text-slate-400 font-medium italic">Ready for today's prep challenge?</p>
-          </div>
-          <div className={cn(
-            "px-6 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border shadow-xl",
-            currentUser?.subscription === SubscriptionStatus.PRO 
-              ? 'bg-green-500/10 text-green-400 border-green-500/30 shadow-green-500/10' 
-              : currentUser?.subscription === SubscriptionStatus.PENDING 
-              ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30 shadow-yellow-500/10'
-              : 'bg-slate-500/10 text-slate-400 border-slate-500/30 shadow-slate-500/5'
-          )}>
-            {currentUser?.subscription === SubscriptionStatus.PRO ? 'Pro Plan Active' : 
-             currentUser?.subscription === SubscriptionStatus.PENDING ? 'Verification Pending' : 
-             'Free Plan'}
-          </div>
-        </motion.div>
+interface DashboardProps {
+  currentUser: User | null;
+  appConfig: AppConfig;
+  testResults: TestResult[];
+  isLoading: boolean;
+  startTest: (topic: string, isPro: boolean, lang: 'English' | 'Hindi', diff: Difficulty) => Promise<void>;
+  navigate: any;
+}
 
-        {currentUser?.subscription === SubscriptionStatus.FREE && (
-           <motion.div 
-             initial={{ opacity: 0, y: 20 }}
-             animate={{ opacity: 1, y: 0 }}
-             className="glass p-8 rounded-[2.5rem] bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border-indigo-500/20 flex flex-col md:flex-row justify-between items-center gap-8"
-           >
-              <div className="space-y-2 text-center md:text-left">
-                <h3 className="text-2xl font-black flex items-center justify-center md:justify-start gap-3">
-                  Upgrade to Pro <span className="text-[10px] py-1 px-3 bg-indigo-500 rounded-full text-white font-black italic tracking-widest">HOT</span>
-                </h3>
-                <p className="text-slate-400 font-medium">Unlock unlimited 100-question tests with timer for just ₹{appConfig.subscriptionPrice}/mo.</p>
-              </div>
-              <button 
-                onClick={() => navigate('/payment')}
-                className="w-full md:w-auto px-10 py-4 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 whitespace-nowrap transition-all active:scale-95"
-              >
-                Go Pro Now
-              </button>
-           </motion.div>
-        )}
+const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResults, isLoading, startTest, navigate }) => {
+  const [topic, setTopic] = useState('');
+  const [testLanguage, setTestLanguage] = useState<'English' | 'Hindi'>('English');
+  const [testDifficulty, setTestDifficulty] = useState<Difficulty>('Medium');
+  
+  return (
+    <div className="pt-32 pb-20 px-6 max-w-5xl mx-auto space-y-12">
+      <motion.div 
+        initial={{ opacity: 0, x: -20 }}
+        animate={{ opacity: 1, x: 0 }}
+        className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6"
+      >
+        <div className="space-y-1">
+          <h2 className="text-4xl font-black tracking-tight text-white">Hello, {currentUser?.fullName.split(' ')[0]}!</h2>
+          <p className="text-slate-400 font-medium italic">Ready for today's prep challenge?</p>
+        </div>
+        <div className={cn(
+          "px-6 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border shadow-xl",
+          currentUser?.subscription === SubscriptionStatus.PRO 
+            ? 'bg-green-500/10 text-green-400 border-green-500/30 shadow-green-500/10' 
+            : currentUser?.subscription === SubscriptionStatus.PENDING 
+            ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30 shadow-yellow-500/10'
+            : 'bg-slate-500/10 text-slate-400 border-slate-500/30 shadow-slate-500/5'
+        )}>
+          {currentUser?.subscription === SubscriptionStatus.PRO ? 'Pro Plan Active' : 
+           currentUser?.subscription === SubscriptionStatus.PENDING ? 'Verification Pending' : 
+           'Free Plan'}
+        </div>
+      </motion.div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-          <div className="lg:col-span-2 space-y-8">
-            <div className="glass p-10 rounded-[3rem] space-y-8 shadow-2xl shadow-indigo-500/5 border-white/10">
-              <div className="space-y-3">
-                <h3 className="text-3xl font-black tracking-tight">New Mock Test</h3>
-                <p className="text-slate-400 font-medium">What are we studying today? Enter exam name or subject.</p>
-              </div>
-              
-              <div className="space-y-6">
-                <div className="relative group">
-                  <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
-                    <Search size={24} />
-                  </div>
-                  <input 
-                    type="text"
-                    value={topic}
-                    onChange={e => setTopic(e.target.value)}
-                    placeholder="e.g. SSC CGL Quant, Modern History..."
-                    className="w-full pl-16 pr-6 py-6 bg-white/[0.03] border border-white/10 rounded-[2rem] focus:outline-none focus:border-indigo-500/50 text-xl transition-all font-bold"
-                  />
-                </div>
-
-                <div className="flex flex-col md:flex-row md:items-center gap-6 px-2">
-                  <div className="flex items-center gap-4">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Language:</span>
-                    <div className="flex glass p-1 rounded-xl border border-white/5">
-                      {(['English', 'Hindi'] as const).map(lang => (
-                        <button 
-                          key={lang}
-                          onClick={() => setTestLanguage(lang)}
-                          className={cn(
-                            "px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
-                            testLanguage === lang ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20" : "text-slate-500 hover:text-slate-300"
-                          )}
-                        >
-                          {lang}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-4">
-                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Difficulty:</span>
-                    <div className="flex glass p-1 rounded-xl border border-white/5">
-                      {(['Easy', 'Medium', 'Hard'] as const).map(diff => (
-                        <button 
-                          key={diff}
-                          onClick={() => setTestDifficulty(diff)}
-                          className={cn(
-                            "px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
-                            testDifficulty === diff ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20" : "text-slate-500 hover:text-slate-300"
-                          )}
-                        >
-                          {diff}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex flex-col sm:flex-row gap-5 pt-4">
-                <button 
-                  disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && testResults.filter(r => r.total === 5).length >= 3)}
-                  onClick={() => startTest(topic, false, testLanguage, testDifficulty)}
-                  className="flex-1 py-5 glass hover:bg-white/10 rounded-2xl font-black text-slate-300 border border-white/10 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
-                >
-                  {isLoading ? <Loader2 className="animate-spin" /> : <Zap size={20} />}
-                  {isLoading ? 'Generating...' : 
-                   (currentUser?.subscription === SubscriptionStatus.FREE ? `5-Q Quick Test (${Math.max(0, 3 - testResults.filter(r => r.total === 5).length)} left)` : `5-Q Quick Test`)}
-                </button>
-                <button 
-                  disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && testResults.filter(r => r.total === 100).length >= 1)}
-                  onClick={() => startTest(topic, true, testLanguage, testDifficulty)}
-                  className="flex-1 py-5 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-white shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:bg-slate-800 disabled:text-slate-500 flex items-center justify-center gap-3"
-                >
-                  {isLoading ? <Loader2 className="animate-spin" /> : <Trophy size={20} />}
-                  {isLoading ? 'Generating...' : 
-                   (currentUser?.subscription === SubscriptionStatus.FREE ? `Full 100-Q Trial (${Math.max(0, 1 - testResults.filter(r => r.total === 100).length)} left)` : 
-                    currentUser?.subscription === SubscriptionStatus.PENDING ? `Verification Pending` : 
-                    `Full 100-Q Test`)}
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-6">
-              <h3 className="text-2xl font-black flex items-center gap-3 px-2 tracking-tight">
-                <History className="text-indigo-400" /> Recent Performance
+      {currentUser?.subscription === SubscriptionStatus.FREE && (
+         <motion.div 
+           initial={{ opacity: 0, y: 20 }}
+           animate={{ opacity: 1, y: 0 }}
+           className="glass p-8 rounded-[2.5rem] bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border-indigo-500/20 flex flex-col md:flex-row justify-between items-center gap-8"
+         >
+            <div className="space-y-2 text-center md:text-left">
+              <h3 className="text-2xl font-black flex items-center justify-center md:justify-start gap-3 text-white">
+                Upgrade to Pro <span className="text-[10px] py-1 px-3 bg-indigo-500 rounded-full text-white font-black italic tracking-widest">HOT</span>
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {testResults.length === 0 ? (
-                  <div className="col-span-full glass p-16 text-center rounded-[3rem] border-white/5">
-                    <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-600">
-                      <FileText size={32} />
-                    </div>
-                    <p className="text-slate-500 font-bold">No tests taken yet. Start your first prep today!</p>
-                  </div>
-                ) : (
-                  testResults.map((res, i) => (
-                    <motion.div 
-                      initial={{ opacity: 0, y: 20 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: i * 0.1 }}
-                      key={res.id} 
-                      className="glass p-6 rounded-[2.5rem] flex items-center justify-between border-white/5 hover:border-indigo-500/30 transition-colors group"
-                    >
-                      <div className="space-y-1">
-                        <h4 className="font-black text-lg group-hover:text-indigo-400 transition-colors">{res.examName}</h4>
-                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                          {new Date(res.date).toLocaleDateString()} • {res.total} Qs
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <div className={cn(
-                          "text-xl font-black tracking-tighter flex items-center justify-end gap-1",
-                          getRating(res.percentage).color
-                        )}>
-                          {getRating(res.percentage).label}
-                        </div>
-                        <div className="flex items-center justify-end gap-0.5 mt-1">
-                          {[...Array(5)].map((_, i) => (
-                            <Star 
-                              key={i} 
-                              size={10} 
-                              className={i < getRating(res.percentage).stars ? getRating(res.percentage).color : 'text-slate-700'} 
-                              fill="currentColor" 
-                            />
-                          ))}
-                        </div>
-                        <div className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-600 mt-1">Student Rating</div>
-                      </div>
-                    </motion.div>
-                  ))
-                )}
+              <p className="text-slate-400 font-medium">Unlock unlimited 100-question tests with timer for just ₹{appConfig.subscriptionPrice}/mo.</p>
+            </div>
+            <button 
+              onClick={() => navigate('/payment')}
+              className="w-full md:w-auto px-10 py-4 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 whitespace-nowrap transition-all active:scale-95"
+            >
+              Go Pro Now
+            </button>
+         </motion.div>
+      )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+        <div className="lg:col-span-2 space-y-8">
+          <div className="glass p-10 rounded-[3rem] space-y-8 shadow-2xl shadow-indigo-500/5 border-white/10">
+            <div className="space-y-3">
+              <h3 className="text-3xl font-black tracking-tight text-white">New Mock Test</h3>
+              <p className="text-slate-400 font-medium">What are we studying today? Enter exam name or subject.</p>
+            </div>
+            
+            <div className="space-y-6">
+              <div className="relative group">
+                <div className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+                  <Search size={24} />
+                </div>
+                <input 
+                  type="text"
+                  value={topic}
+                  onChange={e => setTopic(e.target.value)}
+                  placeholder="e.g. SSC CGL Quant, Modern History..."
+                  className="w-full pl-16 pr-6 py-6 bg-white/[0.03] border border-white/10 rounded-[2rem] focus:outline-none focus:border-indigo-500/50 text-xl transition-all font-bold text-white placeholder:text-slate-600"
+                />
               </div>
+
+              <div className="flex flex-col md:flex-row md:items-center gap-6 px-2">
+                <div className="flex items-center gap-4">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Language:</span>
+                  <div className="flex glass p-1 rounded-xl border border-white/5">
+                    {(['English', 'Hindi'] as const).map(lang => (
+                      <button 
+                        key={lang}
+                        onClick={() => setTestLanguage(lang)}
+                        className={cn(
+                          "px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                          testLanguage === lang ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20" : "text-slate-500 hover:text-slate-300"
+                        )}
+                      >
+                        {lang}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Difficulty:</span>
+                  <div className="flex glass p-1 rounded-xl border border-white/5">
+                    {(['Easy', 'Medium', 'Hard'] as const).map(diff => (
+                      <button 
+                        key={diff}
+                        onClick={() => setTestDifficulty(diff)}
+                        className={cn(
+                          "px-4 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all",
+                          testDifficulty === diff ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20" : "text-slate-500 hover:text-slate-300"
+                        )}
+                      >
+                        {diff}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-5 pt-4">
+              <button 
+                disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && testResults.filter(r => r.total === 5).length >= 3)}
+                onClick={() => startTest(topic, false, testLanguage, testDifficulty)}
+                className="flex-1 py-5 glass hover:bg-white/10 rounded-2xl font-black text-slate-300 border border-white/10 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
+              >
+                {isLoading ? <Loader2 className="animate-spin" /> : <Zap size={20} />}
+                {isLoading ? 'Generating...' : 
+                 (currentUser?.subscription === SubscriptionStatus.FREE ? `5-Q Quick Test (${Math.max(0, 3 - testResults.filter(r => r.total === 5).length)} left)` : `5-Q Quick Test`)}
+              </button>
+              <button 
+                disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && testResults.filter(r => r.total === 100).length >= 1)}
+                onClick={() => startTest(topic, true, testLanguage, testDifficulty)}
+                className="flex-1 py-5 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-white shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:bg-slate-800 disabled:text-slate-500 flex items-center justify-center gap-3"
+              >
+                {isLoading ? <Loader2 className="animate-spin" /> : <Trophy size={20} />}
+                {isLoading ? 'Generating...' : 
+                 (currentUser?.subscription === SubscriptionStatus.FREE ? `Full 100-Q Trial (${Math.max(0, 1 - testResults.filter(r => r.total === 100).length)} left)` : 
+                  currentUser?.subscription === SubscriptionStatus.PENDING ? `Verification Pending` : 
+                  `Full 100-Q Test`)}
+              </button>
             </div>
           </div>
 
-          <div className="space-y-8">
-            <div className="glass p-8 rounded-[3rem] border-white/10 space-y-6">
-              <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Quick Stats</h4>
-              <div className="space-y-6">
-                {[
-                  { label: 'Total Tests', val: testResults.length, icon: FileText, color: 'text-blue-400' },
-                  { 
-                    label: 'Overall Rating', 
-                    val: getRating(testResults.reduce((acc, r) => acc + r.percentage, 0) / (testResults.length || 1)).label, 
-                    icon: Star, 
-                    color: getRating(testResults.reduce((acc, r) => acc + r.percentage, 0) / (testResults.length || 1)).color 
-                  },
-                  { label: 'Free Tests Left', val: Math.max(0, 1 - (currentUser?.trialsUsed || 0)), icon: Zap, color: 'text-amber-400' }
-                ].map((stat, i) => (
-                  <div key={i} className="flex items-center gap-4">
-                    <div className={cn("p-3 rounded-2xl bg-white/5", stat.color)}>
-                      <stat.icon size={20} />
-                    </div>
-                    <div>
-                      <div className="text-2xl font-black tracking-tighter">{stat.val}</div>
-                      <div className="text-[9px] font-black uppercase tracking-widest text-slate-500">{stat.label}</div>
-                    </div>
+          <div className="space-y-6">
+            <h3 className="text-2xl font-black flex items-center gap-3 px-2 tracking-tight text-white">
+              <History className="text-indigo-400" /> Recent Performance
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {testResults.length === 0 ? (
+                <div className="col-span-full glass p-16 text-center rounded-[3rem] border-white/5">
+                  <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-600">
+                    <FileText size={32} />
                   </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="glass p-8 rounded-[3rem] border-white/10 bg-gradient-to-br from-purple-500/5 to-indigo-500/5">
-              <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 mb-6">Study Tip</h4>
-              <p className="text-slate-400 text-sm leading-relaxed font-medium italic">
-                "Consistency is key. Even a 5-question mock test daily can significantly improve your retention over time."
-              </p>
+                  <p className="text-slate-500 font-bold">No tests taken yet. Start your first prep today!</p>
+                </div>
+              ) : (
+                testResults.map((res, i) => (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.1 }}
+                    key={res.id} 
+                    className="glass p-6 rounded-[2.5rem] flex items-center justify-between border-white/5 hover:border-indigo-500/30 transition-colors group"
+                  >
+                    <div className="space-y-1">
+                      <h4 className="font-black text-lg group-hover:text-indigo-400 transition-colors text-white">{res.examName}</h4>
+                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                        {new Date(res.date).toLocaleDateString()} • {res.total} Qs
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <div className={cn(
+                        "text-xl font-black tracking-tighter flex items-center justify-end gap-1",
+                        getRating(res.percentage).color
+                      )}>
+                        {getRating(res.percentage).label}
+                      </div>
+                      <div className="flex items-center justify-end gap-0.5 mt-1">
+                        {[...Array(5)].map((_, i) => (
+                          <Star 
+                            key={i} 
+                            size={10} 
+                            className={i < getRating(res.percentage).stars ? getRating(res.percentage).color : 'text-slate-700'} 
+                            fill="currentColor" 
+                          />
+                        ))}
+                      </div>
+                      <div className="text-[8px] font-black uppercase tracking-[0.2em] text-slate-600 mt-1">Student Rating</div>
+                    </div>
+                  </motion.div>
+                ))
+              )}
             </div>
           </div>
         </div>
-      </div>
-    );
-  };
 
-  const Payment = () => {
-    return (
-      <div className="pt-32 pb-20 px-6 flex justify-center items-start min-h-screen">
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="w-full max-w-xl space-y-10"
-        >
-          <div className="text-center space-y-3">
-            <h2 className="text-4xl md:text-5xl font-black tracking-tight">Upgrade to <span className="gradient-text">Pro</span></h2>
-            <p className="text-slate-400 font-medium text-sm md:text-base">Unlock unlimited AI generation and compete at elite levels.</p>
-          </div>
-          
-          <div className="glass p-6 md:p-10 rounded-[2.5rem] md:rounded-[3rem] space-y-10 text-center shadow-2xl shadow-indigo-500/10 border-white/10">
-            <div className="space-y-8">
-              <div className="pt-2 space-y-1">
-                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Subscription Plan</p>
-                <div className="text-5xl md:text-6xl font-black text-white tracking-tighter">₹{appConfig.subscriptionPrice}</div>
-                <p className="text-slate-400 font-bold">30 Days Access</p>
-              </div>
-
-              <div className="pt-4">
-                <button 
-                  disabled={isLoading}
-                  onClick={handleRazorpayPayment}
-                  className="inline-flex items-center justify-center gap-3 w-full py-6 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50"
-                >
-                  {isLoading ? <Loader2 className="animate-spin" /> : <Zap size={24} />}
-                  {isLoading ? 'Processing...' : 'Buy Pro'}
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-6 text-left border-t border-white/5 pt-10">
-              <h4 className="text-xl font-black text-white">Pro Benefits:</h4>
-              <ul className="space-y-4">
-                {[
-                  'Unlimited 100-Question Tests',
-                  'Advanced Performance Analytics',
-                  'Priority Access',
-                  'Ad-Free Experience',
-                  '30 Days Premium Access'
-                ].map(benefit => (
-                  <li key={benefit} className="flex items-center gap-3 text-slate-300 font-medium">
-                    <div className="w-5 h-5 bg-green-500/20 rounded-full flex items-center justify-center text-green-400">
-                      <CheckCircle2 size={14} />
-                    </div>
-                    {benefit}
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            <div className="flex items-center justify-center gap-6 pt-4">
-               {['Secure', 'Instant', '24/7 Support'].map(tag => (
-                 <div key={tag} className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-600">
-                   <div className="w-1 h-1 bg-indigo-500 rounded-full"></div> {tag}
-                 </div>
-               ))}
+        <div className="space-y-8">
+          <div className="glass p-8 rounded-[3rem] border-white/10 space-y-6">
+            <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Quick Stats</h4>
+            <div className="space-y-6">
+              {[
+                { label: 'Total Tests', val: testResults.length, icon: FileText, color: 'text-blue-400' },
+                { 
+                  label: 'Overall Rating', 
+                  val: getRating(testResults.reduce((acc, r) => acc + r.percentage, 0) / (testResults.length || 1)).label, 
+                  icon: Star, 
+                  color: getRating(testResults.reduce((acc, r) => acc + r.percentage, 0) / (testResults.length || 1)).color 
+                },
+                { label: 'Free Tests Left', val: Math.max(0, 1 - (currentUser?.trialsUsed || 0)), icon: Zap, color: 'text-amber-400' }
+              ].map((stat, i) => (
+                <div key={i} className="flex items-center gap-4">
+                  <div className={cn("p-3 rounded-2xl bg-white/5", stat.color)}>
+                    <stat.icon size={20} />
+                  </div>
+                  <div>
+                    <div className="text-2xl font-black tracking-tighter text-white">{stat.val}</div>
+                    <div className="text-[9px] font-black uppercase tracking-widest text-slate-500">{stat.label}</div>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
-        </motion.div>
+
+          <div className="glass p-8 rounded-[3rem] border-white/10 bg-gradient-to-br from-purple-500/5 to-indigo-500/5">
+            <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 mb-6">Study Tip</h4>
+            <p className="text-slate-400 text-sm leading-relaxed font-medium italic">
+              "Consistency is key. Even a 5-question mock test daily can significantly improve your retention over time."
+            </p>
+          </div>
+        </div>
       </div>
-    );
-  };
+    </div>
+  );
+};
+
+// --- Payment Component (Moved Outside to prevent remounting) ---
+interface PaymentProps {
+  appConfig: AppConfig;
+  isLoading: boolean;
+  handleRazorpayPayment: () => Promise<void>;
+}
+
+const Payment: React.FC<PaymentProps> = ({ appConfig, isLoading, handleRazorpayPayment }) => {
+  return (
+    <div className="pt-32 pb-20 px-6 flex justify-center items-start min-h-screen">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-xl space-y-10"
+      >
+        <div className="text-center space-y-3">
+          <h2 className="text-4xl md:text-5xl font-black tracking-tight">Upgrade to <span className="gradient-text">Pro</span></h2>
+          <p className="text-slate-400 font-medium text-sm md:text-base">Unlock unlimited AI generation and compete at elite levels.</p>
+        </div>
+        
+        <div className="glass p-6 md:p-10 rounded-[2.5rem] md:rounded-[3rem] space-y-10 text-center shadow-2xl shadow-indigo-500/10 border-white/10">
+          <div className="space-y-8">
+            <div className="pt-2 space-y-1">
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Subscription Plan</p>
+              <div className="text-5xl md:text-6xl font-black text-white tracking-tighter">₹{appConfig.subscriptionPrice}</div>
+              <p className="text-slate-400 font-bold">30 Days Access</p>
+            </div>
+
+            <div className="pt-4">
+              <button 
+                disabled={isLoading}
+                onClick={handleRazorpayPayment}
+                className="inline-flex items-center justify-center gap-3 w-full py-6 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50"
+              >
+                {isLoading ? <Loader2 className="animate-spin" /> : <Zap size={24} />}
+                {isLoading ? 'Processing...' : 'Buy Pro'}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-6 text-left border-t border-white/5 pt-10">
+            <h4 className="text-xl font-black text-white">Pro Benefits:</h4>
+            <ul className="space-y-4">
+              {[
+                'Unlimited 100-Question Tests',
+                'Advanced Performance Analytics',
+                'Priority Access',
+                'Ad-Free Experience',
+                '30 Days Premium Access'
+              ].map(benefit => (
+                <li key={benefit} className="flex items-center gap-3 text-slate-300 font-medium">
+                  <div className="w-5 h-5 bg-green-500/20 rounded-full flex items-center justify-center text-green-400">
+                    <CheckCircle2 size={14} />
+                  </div>
+                  {benefit}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="flex items-center justify-center gap-6 pt-4">
+             {['Secure', 'Instant', '24/7 Support'].map(tag => (
+               <div key={tag} className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-600">
+                 <div className="w-1 h-1 bg-indigo-500 rounded-full"></div> {tag}
+               </div>
+             ))}
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
 
   const ProfilePage = () => {
     if (!currentUser) return null;
@@ -2134,10 +2183,27 @@ const AppContent: React.FC = () => {
               transition={{ duration: 0.3, ease: "easeInOut" }}
             >
               <Routes location={location}>
-                <Route path="/" element={<Home />} />
-                <Route path="/auth" element={<Auth />} />
-                <Route path="/dashboard" element={currentUser ? <Dashboard /> : <Navigate to="/auth" />} />
-                <Route path="/payment" element={currentUser ? <Payment /> : <Navigate to="/auth" />} />
+                <Route path="/" element={<Home currentUser={currentUser} navigate={navigate} setAuthMode={setAuthMode} />} />
+                <Route path="/auth" element={<Auth 
+                  authMode={authMode} 
+                  setAuthMode={setAuthMode} 
+                  isLoading={isLoading} 
+                  error={error} 
+                  successMessage={successMessage} 
+                  setError={setError}
+                  handleAuth={handleAuth}
+                  handleResetPassword={handleResetPassword}
+                  showAlert={showAlert}
+                />} />
+                <Route path="/dashboard" element={currentUser ? <Dashboard 
+                  currentUser={currentUser} 
+                  appConfig={appConfig} 
+                  testResults={testResults} 
+                  isLoading={isLoading} 
+                  startTest={startTest} 
+                  navigate={navigate} 
+                /> : <Navigate to="/auth" />} />
+                <Route path="/payment" element={currentUser ? <Payment appConfig={appConfig} isLoading={isLoading} handleRazorpayPayment={handleRazorpayPayment} /> : <Navigate to="/auth" />} />
                 <Route path="/test" element={currentUser ? <TestInterface 
                   currentTest={currentTest}
                   activeQuestionIndex={activeQuestionIndex}
