@@ -1002,7 +1002,8 @@ const AppContent: React.FC = () => {
               showAlert("Success", "Welcome to Pro! Your subscription is now active.");
               navigate('/dashboard');
             } else {
-              showAlert("Payment Verification Failed", verifyData.message || "Could not verify payment.");
+              console.error("Payment verification failed:", verifyData);
+              showAlert("Payment Verification Failed", verifyData.message || "Could not verify payment. Please contact support.");
             }
           } catch (err: any) {
             showAlert("Error", "Verification failed: " + err.message);

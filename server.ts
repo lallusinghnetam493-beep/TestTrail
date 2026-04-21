@@ -88,36 +88,63 @@ async function startServer() {
   app.post("/api/payment/verify", async (req, res) => {
     try {
       const { razorpay_order_id, razorpay_payment_id, razorpay_signature, userId } = req.body;
-      if (!userId) return res.status(400).json({ error: "User ID missing" });
+      
+      console.log(`[Payment] Verification request for user: ${userId}`);
+      console.log(`[Payment] Order ID: ${razorpay_order_id}`);
+      console.log(`[Payment] Payment ID: ${razorpay_payment_id}`);
+
+      if (!userId) return res.status(400).json({ status: "failure", message: "User ID missing" });
+      if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+        return res.status(400).json({ status: "failure", message: "Rzp details missing from request" });
+      }
+
+      // Trim whitespace from secret just in case
+      const secret = (process.env.RAZORPAY_KEY_SECRET || "").trim();
+      if (!secret || secret === "MISSING_KEY_SECRET") {
+        console.error("RAZORPAY_KEY_SECRET is not correctly defined in environment");
+        return res.status(500).json({ status: "failure", message: "Server error: RAZORPAY_KEY_SECRET not set in AI Studio Settings" });
+      }
 
       const sign = razorpay_order_id + "|" + razorpay_payment_id;
       const expectedSign = crypto
-        .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET!)
-        .update(sign.toString())
+        .createHmac("sha256", secret)
+        .update(sign)
         .digest("hex");
 
-      console.log("Verification Details:", {
-        orderId: razorpay_order_id,
-        paymentId: razorpay_payment_id,
-        receivedSign: razorpay_signature,
-        expectedSign: expectedSign
-      });
+      const isValid = razorpay_signature === expectedSign;
+      console.log(`[Payment] Signature validation result: ${isValid}`);
 
-      if (razorpay_signature === expectedSign) {
+      if (isValid) {
+        // Double check user exists first to provide better error
+        const userRef = firestore.collection("users").doc(userId);
+        const userDoc = await userRef.get();
+        
+        if (!userDoc.exists) {
+          console.error(`[Payment] User document not found for ID: ${userId}`);
+          return res.status(404).json({ status: "failure", message: "Verification failed: User record not found" });
+        }
+
         // Update user status
-        await firestore.collection("users").doc(userId).update({
+        await userRef.update({
           subscription: "PRO",
           payment_id: razorpay_payment_id,
           updated_at: admin.firestore.FieldValue.serverTimestamp()
         });
 
+        console.log(`[Payment] Successfully upgraded user ${userId} to PRO`);
         res.json({ status: "success" });
       } else {
-        res.status(400).json({ status: "failure" });
+        console.warn(`[Payment] Signature Mismatch!`);
+        console.warn(`[Payment] Expected: ${expectedSign}`);
+        console.warn(`[Payment] Received: ${razorpay_signature}`);
+        res.status(400).json({ 
+          status: "failure", 
+          message: "Payment verification failed: Signature mismatch. Ensure your Key Secret in AI Studio Settings matches your Razorpay Dashboard." 
+        });
       }
     } catch (error: any) {
-      console.error("Razorpay Verification Error:", error);
-      res.status(500).json({ error: error.message });
+      console.error("[Payment] Verification Critical Error:", error);
+      res.status(500).json({ status: "failure", message: "Server error during verification: " + error.message });
     }
   });
 
