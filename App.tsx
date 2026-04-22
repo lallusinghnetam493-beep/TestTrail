@@ -1087,7 +1087,7 @@ const AppContent: React.FC = () => {
         >
           Contact
         </Link>
-        {currentUser ? (
+        {!isAuthChecking && currentUser ? (
           <>
             {!currentUser.isAdmin && (
               <Link 
@@ -1134,7 +1134,7 @@ const AppContent: React.FC = () => {
               </button>
             )}
           </>
-        ) : (
+        ) : !isAuthChecking && (
           <motion.button 
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
@@ -1193,7 +1193,11 @@ const AppContent: React.FC = () => {
             exit={{ opacity: 0, y: -20 }}
             className="absolute top-20 left-0 right-0 glass border-b border-white/10 p-6 flex flex-col gap-4 md:hidden"
           >
-            {currentUser ? (
+            {isAuthChecking ? (
+              <div className="flex justify-center py-4">
+                <Loader2 className="animate-spin text-indigo-500" />
+              </div>
+            ) : currentUser ? (
               <>
                 {!currentUser.isAdmin && <button onClick={() => { navigate('/dashboard'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2">Dashboard</button>}
                 {currentUser.isAdmin && <button onClick={() => { navigate('/admin'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2 text-purple-400">Admin Panel</button>}
@@ -2184,7 +2188,7 @@ const Payment: React.FC<PaymentProps> = ({ appConfig, isLoading, handleRazorpayP
             >
               <Routes location={location}>
                 <Route path="/" element={<Home currentUser={currentUser} navigate={navigate} setAuthMode={setAuthMode} />} />
-                <Route path="/auth" element={<Auth 
+                <Route path="/auth" element={currentUser ? <Navigate to={currentUser.isAdmin ? "/admin" : "/dashboard"} /> : <Auth 
                   authMode={authMode} 
                   setAuthMode={setAuthMode} 
                   isLoading={isLoading} 
