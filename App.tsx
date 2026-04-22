@@ -913,17 +913,38 @@ const AppContent: React.FC = () => {
   }, [location.pathname, currentTest, timeLeft, submitTest]);
 
   // --- Payment Handler ---
+  const loadRazorpay = () => {
+    return new Promise((resolve) => {
+      if ((window as any).Razorpay) {
+        resolve(true);
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
   const handleRazorpayPayment = async () => {
     if (!currentUser) return;
     
     setIsLoadingWithRef(true);
+    setLoadingMessage('Preparing payment security...');
+
     try {
+      const isLoaded = await loadRazorpay();
+      if (!isLoaded) {
+        throw new Error("Could not load payment gateway. Check your internet connection.");
+      }
+
       const keyId = import.meta.env.VITE_RAZORPAY_KEY_ID;
       if (!keyId) {
-        throw new Error("Razorpay Key ID is missing. Please check your environment variables.");
+        throw new Error("Razorpay Key ID is missing.");
       }
-      console.log("Initiating payment with Key ID:", keyId.substring(0, 8) + "...");
 
+      setLoadingMessage('Creating secure order...');
       // 1. Create Order on Server
       const response = await fetch('/api/payment/order', {
         method: 'POST',
@@ -1025,11 +1046,6 @@ const AppContent: React.FC = () => {
         }
       };
 
-      if (!(window as any).Razorpay) {
-        setIsLoadingWithRef(false);
-        showAlert("Payment Error", "Razorpay SDK is not loaded. Please refresh the page and try again.");
-        return;
-      }
 
       const rzp = new (window as any).Razorpay(options);
       
@@ -1040,15 +1056,16 @@ const AppContent: React.FC = () => {
       });
 
       // On mobile, popups can be blocked if triggered after an async call.
-      // Razorpay's open() handles this usually, but we ensure it's called.
-      try {
-        rzp.open();
-        // Do NOT reset loading here, wait for modal to dismiss or payment to finish
-      } catch (e: any) {
-        console.error("RZP Open Error:", e);
-        setIsLoadingWithRef(false);
-        showAlert("Error", "Could not open payment window. Please check if popups are blocked.");
-      }
+      // A small delay and ensuring it's a clean call stack helps prevent browser crashes.
+      setTimeout(() => {
+        try {
+          rzp.open();
+        } catch (e: any) {
+          console.error("RZP Open Error:", e);
+          setIsLoadingWithRef(false);
+          showAlert("Error", "Could not open payment window. Please check if popups are blocked.");
+        }
+      }, 100);
       
     } catch (err: any) {
       setIsLoadingWithRef(false);

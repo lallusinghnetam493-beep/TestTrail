@@ -4,29 +4,6 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TestTrail - AI Mock Test Platform</title>
-    <script>
-      // Protection against scripts trying to overwrite window.fetch (common source of mobile crashes)
-      (function() {
-        try {
-          const originalFetch = window.fetch;
-          if (originalFetch) {
-            Object.defineProperty(window, 'fetch', {
-              get: function() { return originalFetch; },
-              set: function(v) { 
-                console.warn('Blocked attempt to overwrite window.fetch'); 
-                // Do nothing, preserving the original fetch
-              },
-              configurable: true,
-              enumerable: true
-            });
-            console.log('Fetch protection active');
-          }
-        } catch (e) {
-          console.warn('Fetch protection could not be initialized:', e);
-        }
-      })();
-    </script>
-    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><defs><linearGradient id=%22g%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22><stop offset=%220%25%22 stop-color=%22%236366f1%22/><stop offset=%22100%25%22 stop-color=%22%239333ea%22/></linearGradient></defs><rect width=%22100%22 height=%22100%22 rx=%2225%22 fill=%22url(%23g)%22/><text x=%2250%22 y=%2255%22 font-family=%22Arial, sans-serif%22 font-weight=%22900%22 font-size=%2265%22 fill=%22white%22 text-anchor=%22middle%22 dominant-baseline=%22middle%22>T</text></svg>">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   </head>
