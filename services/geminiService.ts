@@ -5,8 +5,9 @@ import { Question, Difficulty } from "../types";
 export const generateQuestions = async (topic: string, count: number, language: string, difficulty: Difficulty): Promise<Question[]> => {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   
-  // Use pro model for all requests to ensure maximum quality and token limits for 100 questions
-  const modelName = "gemini-3.1-pro-preview";
+  // Use flash model for speed when generating many questions (Flash is much faster than Pro for this volume)
+  // High volume structured data (100 Qs) is better handled by Flash to avoid browser/network timeouts.
+  const modelName = count > 50 ? "gemini-3-flash-preview" : "gemini-3.1-pro-preview";
 
   const systemInstruction = `You are an expert exam paper setter for Indian government exams (UPSC, SSC CGL, Banking, Railway, SBI PO, etc.).
   Your task is to generate high-quality, factually accurate multiple choice questions.
@@ -15,11 +16,11 @@ export const generateQuestions = async (topic: string, count: number, language: 
   1. Quantity: You MUST generate EXACTLY the number of questions requested (${count}).
   2. Language: All content MUST be in ${language}.
   3. Difficulty: Adaptive ${difficulty} level.
-  4. Accuracy: All historical, scientific, and atmospheric facts must be 100% accurate.
+  4. Accuracy: All facts must be 100% accurate.
   5. Format: Return ONLY a valid JSON array of objects.
-  6. Persistence: Do not stop or truncate the list. If you need more space, decrease the length of each question text but maintain the count.`;
+  6. Conciseness: Keep question text and options clear and brief to ensure the response fits within limits.`;
 
-  const prompt = `Generate exactly ${count} multiple choice questions about "${topic}".`;
+  const prompt = `Generate exactly ${count} multiple choice questions about "${topic}" in ${language}. Focus on breadth and depth suitable for ${difficulty} difficulty.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -27,10 +28,12 @@ export const generateQuestions = async (topic: string, count: number, language: 
       contents: prompt,
       config: {
         systemInstruction,
+        seed: 42,
         responseMimeType: "application/json",
-        // Increase output tokens for 100 questions (approx 150 tokens per question = 15000 tokens)
-        // Note: Gemini 3 models have high limits but specifying it helps hit the target.
-        maxOutputTokens: 20000,
+        // maxOutputTokens: 15000 tokens is enough for ~100 Qs with concise text.
+        // We add thinkingLevel LOW to prioritize speed and reduce cutoff probability.
+        maxOutputTokens: 15000,
+        thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseSchema: {
           type: Type.ARRAY,
           items: {
@@ -53,7 +56,7 @@ export const generateQuestions = async (topic: string, count: number, language: 
     });
 
     if (!response.text) {
-      throw new Error("No response from AI. Please try again.");
+      throw new Error("The AI didn't return any questions. This can happen with very large requests. Please try a more specific topic or shorter count.");
     }
 
     const jsonStr = response.text.trim();
@@ -61,11 +64,15 @@ export const generateQuestions = async (topic: string, count: number, language: 
     
     console.log(`Generated ${questions.length} questions for topic: ${topic}`);
     
+    if (questions.length < count * 0.8) {
+      console.warn(`Generated only ${questions.length}/${count} questions.`);
+    }
+
     return questions;
   } catch (error) {
     console.error("Gemini Generation Error:", error);
     if (error instanceof SyntaxError) {
-      throw new Error("The AI returned a large but slightly malformed response. This happens due to network limits for 100 questions. Please try again with a more specific topic or 50 questions.");
+      throw new Error("The response was truncated due to its large size. Please try again with a more specific topic or 50 questions for best results.");
     }
     throw new Error(error instanceof Error ? error.message : "Failed to generate test. Please check your connection.");
   }
