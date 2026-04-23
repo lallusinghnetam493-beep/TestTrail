@@ -783,8 +783,8 @@ const AppContent: React.FC = () => {
   const startTest = async (topic: string, isPro: boolean, lang: 'English' | 'Hindi', difficulty: Difficulty) => {
     if (!currentUser) return;
 
-    const fullTrialsCount = testResults.filter(r => r.total === 100).length;
-    const quickTrialsCount = testResults.filter(r => r.total === 5).length;
+    const fullTrialsCount = testResults.filter(r => r.total >= 50).length;
+    const quickTrialsCount = testResults.filter(r => r.total <= 10).length;
 
     // Restriction Logic
     if (isPro) {
@@ -931,21 +931,16 @@ const AppContent: React.FC = () => {
     if (!currentUser) return;
     
     setIsLoadingWithRef(true);
-    setLoadingMessage('Preparing payment security...');
+    setLoadingMessage('Initializing transaction...');
 
     try {
-      const isLoaded = await loadRazorpay();
-      if (!isLoaded) {
-        throw new Error("Could not load payment gateway. Check your internet connection.");
-      }
-
       const keyId = import.meta.env.VITE_RAZORPAY_KEY_ID;
       if (!keyId) {
         throw new Error("Razorpay Key ID is missing.");
       }
 
+      // Step 1: Create Order on Server FIRST (before loading Razorpay script to avoid fetch conflicts)
       setLoadingMessage('Creating secure order...');
-      // 1. Create Order on Server
       const response = await fetch('/api/payment/order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -961,7 +956,7 @@ const AppContent: React.FC = () => {
         order = JSON.parse(responseText);
       } catch (e) {
         console.error("Failed to parse payment order response:", responseText);
-        throw new Error(`Server returned HTML instead of JSON. This usually means the API route was not found or the server crashed. Response: ${responseText.substring(0, 100)}...`);
+        throw new Error(`Server returned HTML instead of JSON. Response: ${responseText.substring(0, 50)}...`);
       }
       
       if (!response.ok) {
@@ -972,7 +967,14 @@ const AppContent: React.FC = () => {
         throw new Error('Invalid order response from server');
       }
 
-      // 2. Trigger Razorpay Popup
+      // Step 2: Load Razorpay SDK only after order is ready
+      setLoadingMessage('Connecting to payment gateway...');
+      const isLoaded = await loadRazorpay();
+      if (!isLoaded) {
+        throw new Error("Could not load payment gateway. Please check your internet connection.");
+      }
+
+      // Step 3: Trigger Razorpay Popup
       const options = {
         key: import.meta.env.VITE_RAZORPAY_KEY_ID,
         amount: order.amount,
@@ -1628,22 +1630,22 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
 
             <div className="flex flex-col sm:flex-row gap-5 pt-4">
               <button 
-                disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && testResults.filter(r => r.total === 5).length >= 3)}
+                disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && testResults.filter(r => r.total <= 10).length >= 3)}
                 onClick={() => startTest(topic, false, testLanguage, testDifficulty)}
                 className="flex-1 py-5 glass hover:bg-white/10 rounded-2xl font-black text-slate-300 border border-white/10 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
               >
                 {isLoading ? <Loader2 className="animate-spin" /> : <Zap size={20} />}
                 {isLoading ? 'Generating...' : 
-                 (currentUser?.subscription === SubscriptionStatus.FREE ? `5-Q Quick Test (${Math.max(0, 3 - testResults.filter(r => r.total === 5).length)} left)` : `5-Q Quick Test`)}
+                 (currentUser?.subscription === SubscriptionStatus.FREE ? `5-Q Quick Test (${Math.max(0, 3 - testResults.filter(r => r.total <= 10).length)} left)` : `5-Q Quick Test`)}
               </button>
               <button 
-                disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && testResults.filter(r => r.total === 100).length >= 1)}
+                disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && testResults.filter(r => r.total >= 50).length >= 1) || (currentUser?.subscription === SubscriptionStatus.PENDING)}
                 onClick={() => startTest(topic, true, testLanguage, testDifficulty)}
                 className="flex-1 py-5 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-white shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:bg-slate-800 disabled:text-slate-500 flex items-center justify-center gap-3"
               >
                 {isLoading ? <Loader2 className="animate-spin" /> : <Trophy size={20} />}
                 {isLoading ? 'Generating...' : 
-                 (currentUser?.subscription === SubscriptionStatus.FREE ? `Full 100-Q Trial (${Math.max(0, 1 - testResults.filter(r => r.total === 100).length)} left)` : 
+                 (currentUser?.subscription === SubscriptionStatus.FREE ? `Full 100-Q Trial (${Math.max(0, 1 - testResults.filter(r => r.total >= 50).length)} left)` : 
                   currentUser?.subscription === SubscriptionStatus.PENDING ? `Verification Pending` : 
                   `Full 100-Q Test`)}
               </button>

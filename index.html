@@ -6,6 +6,53 @@
     <title>TestTrail - AI Mock Test Platform</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><defs><linearGradient id=%22g%22 x1=%220%22 y1=%220%22 x2=%221%22 y2=%221%22><stop offset=%220%25%22 stop-color=%22%236366f1%22/><stop offset=%22100%25%22 stop-color=%22%239333ea%22/></linearGradient></defs><rect width=%22100%22 height=%22100%22 rx=%2225%22 fill=%22url(%23g)%22/><text x=%2250%22 y=%2255%22 font-family=%22Arial, sans-serif%22 font-weight=%22900%22 font-size=%2265%22 fill=%22white%22 text-anchor=%22middle%22 dominant-baseline=%22middle%22>T</text></svg>">
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+      /**
+       * Deep Fix for "Uncaught TypeError: Cannot set property fetch of #<Window> which has only a getter"
+       * This error occurs when 3rd-party scripts (like Razorpay) try to overwrite window.fetch
+       * in environments (mobile/webviews) where 'fetch' is a read-only getter on the prototype.
+       */
+      (function() {
+        try {
+          var originalFetch = window.fetch;
+          if (typeof originalFetch !== 'function') return;
+
+          var currentFetch = originalFetch;
+          var patch = {
+            get: function() { return currentFetch; },
+            set: function(v) { currentFetch = v; },
+            configurable: true,
+            enumerable: true
+          };
+
+          // Function to apply patch to a specific object
+          function applyPatch(obj) {
+            try {
+              var desc = Object.getOwnPropertyDescriptor(obj, 'fetch');
+              if (desc && !desc.configurable) return false;
+              Object.defineProperty(obj, 'fetch', patch);
+              return true;
+            } catch (e) {
+              return false;
+            }
+          }
+
+          // 1. Try shadowing on the window instance itself (usually works)
+          if (!applyPatch(window)) {
+            // 2. If blocked, try the immediate prototype (Window.prototype)
+            var proto = Object.getPrototypeOf(window);
+            if (!proto || !applyPatch(proto)) {
+              // 3. Fallback: Try Window prototype if it exists globally
+              if (window.Window && window.Window.prototype) {
+                applyPatch(window.Window.prototype);
+              }
+            }
+          }
+        } catch (err) {
+          // Fail silently to avoid breaking the app in extremely restrictive environments
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
