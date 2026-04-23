@@ -485,9 +485,10 @@ const AppContent: React.FC = () => {
     // Safety timeout
     const timer = setTimeout(() => {
       if (loadingRef.current) {
+        // Only auto-dismiss if it's been stalled for a long time (extended to 90s for 100 Qs)
         setIsLoadingWithRef(false);
       }
-    }, 30000);
+    }, 90000);
 
     const initApp = async (retries = 3) => {
       console.log(`Initializing app with Firebase (Attempt ${4 - retries})...`);
@@ -806,16 +807,16 @@ const AppContent: React.FC = () => {
       }
     }
 
-    if (!topic.trim()) {
-      setError("Please enter an exam or subject name.");
-      return;
+    const count = isPro ? 100 : 5;
+    if (count === 100) {
+      setLoadingMessage('Generating 100 questions... This usually takes 45-60 seconds. Please do not close this window.');
+    } else {
+      setLoadingMessage('Starting your quick test...');
     }
-
-    setLoadingMessage('Starting your test...');
+    
     setIsLoadingWithRef(true);
     setError(null);
     try {
-      const count = isPro ? 100 : 5;
       const questions = await generateQuestions(topic, count, lang, difficulty);
       setCurrentTest({ topic, questions, isPro, language: lang });
       setUserAnswers(new Array(questions.length).fill(-1));
