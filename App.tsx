@@ -799,17 +799,19 @@ const AppContent: React.FC = () => {
         return;
       }
     } else {
-      // For 5-Q Quick Test, limit to 3 trials
-      if (currentUser.subscription === SubscriptionStatus.FREE && quickTrialsCount >= 3) {
-        showAlert("Trial Limit Reached", "You have used your 3 free 5-question trials. Please upgrade to Pro for unlimited access.");
+      // For 5-Q Quick Test, limit to 2 trials
+      if (currentUser.subscription === SubscriptionStatus.FREE && quickTrialsCount >= 2) {
+        showAlert("Trial Limit Reached", "You have used your 2 free 5-question trials. Please upgrade to Pro for unlimited access.");
         navigate('/payment');
         return;
       }
     }
 
-    const count = isPro ? 100 : 5;
+    const count = isPro ? 100 : (currentUser.subscription === SubscriptionStatus.PRO ? 50 : 5);
     if (count === 100) {
       setLoadingMessage('Generating 100 questions... This usually takes 45-60 seconds. Please do not close this window.');
+    } else if (count === 50) {
+      setLoadingMessage('Generating 50 questions... This will take a few moments.');
     } else {
       setLoadingMessage('Starting your quick test...');
     }
@@ -1631,13 +1633,13 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
 
             <div className="flex flex-col sm:flex-row gap-5 pt-4">
               <button 
-                disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && testResults.filter(r => r.total <= 10).length >= 3)}
+                disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && testResults.filter(r => r.total <= 10).length >= 2)}
                 onClick={() => startTest(topic, false, testLanguage, testDifficulty)}
                 className="flex-1 py-5 glass hover:bg-white/10 rounded-2xl font-black text-slate-300 border border-white/10 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
               >
                 {isLoading ? <Loader2 className="animate-spin" /> : <Zap size={20} />}
                 {isLoading ? 'Generating...' : 
-                 (currentUser?.subscription === SubscriptionStatus.FREE ? `5-Q Quick Test (${Math.max(0, 3 - testResults.filter(r => r.total <= 10).length)} left)` : `5-Q Quick Test`)}
+                 (currentUser?.subscription === SubscriptionStatus.FREE ? `5-Q Quick Test (${Math.max(0, 2 - testResults.filter(r => r.total <= 10).length)} left)` : `50-Q Sprint Test`)}
               </button>
               <button 
                 disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && testResults.filter(r => r.total >= 50).length >= 1) || (currentUser?.subscription === SubscriptionStatus.PENDING)}
