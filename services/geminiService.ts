@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 import { Question, Difficulty } from "../types";
 
 export const generateQuestions = async (topic: string, count: number, language: string, difficulty: Difficulty): Promise<Question[]> => {
@@ -30,9 +30,8 @@ export const generateQuestions = async (topic: string, count: number, language: 
         systemInstruction,
         seed: 42,
         responseMimeType: "application/json",
-        // maxOutputTokens: 15000 tokens is enough for ~100 Qs with concise text.
-        // We add thinkingLevel LOW to prioritize speed and reduce cutoff probability.
-        maxOutputTokens: 15000,
+        // Increase output tokens for 100 questions (especially in Hindi which uses more tokens)
+        maxOutputTokens: 20000,
         thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
         responseSchema: {
           type: Type.ARRAY,
