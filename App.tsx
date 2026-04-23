@@ -789,13 +789,13 @@ const AppContent: React.FC = () => {
 
     // Restriction Logic
     if (isPro) {
-      if (currentUser.subscription === SubscriptionStatus.PENDING) {
-        showAlert("Verification Pending", "Your payment is currently being verified by our team. Please wait for approval to access full 100-question tests.");
+      if (currentUser.subscription === SubscriptionStatus.FREE) {
+        showAlert("Pro Feature", "Full 100-question tests are exclusive to Pro subscribers. Please upgrade to unlock.");
+        navigate('/payment');
         return;
       }
-      if (currentUser.subscription === SubscriptionStatus.FREE && fullTrialsCount >= 1) {
-        showAlert("Trial Limit Reached", "You have used your 1 free 100-question trial. Please upgrade to Pro for unlimited access.");
-        navigate('/payment');
+      if (currentUser.subscription === SubscriptionStatus.PENDING) {
+        showAlert("Verification Pending", "Your payment is currently being verified by our team. Please wait for approval to access full 100-question tests.");
         return;
       }
     } else {
@@ -1642,13 +1642,13 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
                  (currentUser?.subscription === SubscriptionStatus.FREE ? `5-Q Quick Test (${Math.max(0, 2 - testResults.filter(r => r.total <= 10).length)} left)` : `50-Q Sprint Test`)}
               </button>
               <button 
-                disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && testResults.filter(r => r.total >= 50).length >= 1) || (currentUser?.subscription === SubscriptionStatus.PENDING)}
+                disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.PENDING)}
                 onClick={() => startTest(topic, true, testLanguage, testDifficulty)}
                 className="flex-1 py-5 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-white shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:bg-slate-800 disabled:text-slate-500 flex items-center justify-center gap-3"
               >
                 {isLoading ? <Loader2 className="animate-spin" /> : <Trophy size={20} />}
                 {isLoading ? 'Generating...' : 
-                 (currentUser?.subscription === SubscriptionStatus.FREE ? `Full 100-Q Trial (${Math.max(0, 1 - testResults.filter(r => r.total >= 50).length)} left)` : 
+                 (currentUser?.subscription === SubscriptionStatus.FREE ? `Full 100-Q (Pro Only)` : 
                   currentUser?.subscription === SubscriptionStatus.PENDING ? `Verification Pending` : 
                   `Full 100-Q Test`)}
               </button>
@@ -1720,7 +1720,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
                   icon: Star, 
                   color: getRating(testResults.reduce((acc, r) => acc + r.percentage, 0) / (testResults.length || 1)).color 
                 },
-                { label: 'Free Tests Left', val: Math.max(0, 1 - (currentUser?.trialsUsed || 0)), icon: Zap, color: 'text-amber-400' }
+                { label: 'Free Tests Left', val: Math.max(0, 2 - (currentUser?.trialsUsed || 0)), icon: Zap, color: 'text-amber-400' }
               ].map((stat, i) => (
                 <div key={i} className="flex items-center gap-4">
                   <div className={cn("p-3 rounded-2xl bg-white/5", stat.color)}>
@@ -1881,9 +1881,9 @@ const Payment: React.FC<PaymentProps> = ({ appConfig, isLoading, handleRazorpayP
                   <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400">
                     <Zap size={18} />
                   </div>
-                  <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">Full Test Trials</span>
+                  <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">Free Test Trials</span>
                 </div>
-                <span className="font-bold text-slate-200">{currentUser.trialsUsed}/3</span>
+                <span className="font-bold text-slate-200">{currentUser.trialsUsed}/2</span>
               </div>
             </div>
           </div>
