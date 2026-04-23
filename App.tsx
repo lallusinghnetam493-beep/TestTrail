@@ -31,7 +31,10 @@ import {
   Copy,
   Eye,
   EyeOff,
-  Star
+  Star,
+  Filter,
+  Calendar,
+  TrendingUp
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -799,9 +802,9 @@ const AppContent: React.FC = () => {
         return;
       }
     } else {
-      // For 5-Q Quick Test, limit to 2 trials
-      if (currentUser.subscription === SubscriptionStatus.FREE && quickTrialsCount >= 2) {
-        showAlert("Trial Limit Reached", "You have used your 2 free 5-question trials. Please upgrade to Pro for unlimited access.");
+      // For Quick Test, limit to 2 trials using the trialsUsed counter
+      if (currentUser.subscription === SubscriptionStatus.FREE && (currentUser.trialsUsed || 0) >= 2) {
+        showAlert("Trial Limit Reached", "You have used your 2 free Quick Test trials. Please upgrade to Pro for unlimited access.");
         navigate('/payment');
         return;
       }
@@ -1524,6 +1527,21 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
   const [testLanguage, setTestLanguage] = useState<'English' | 'Hindi'>('English');
   const [testDifficulty, setTestDifficulty] = useState<Difficulty>('Medium');
   
+  // Filter States
+  const [topicSearch, setTopicSearch] = useState('');
+  const [minScore, setMinScore] = useState<number | ''>('');
+  const [dateRange, setDateRange] = useState({ start: '', end: '' });
+  const [showFilters, setShowFilters] = useState(false);
+
+  const filteredResults = testResults.filter(res => {
+    const matchesTopic = res.examName.toLowerCase().includes(topicSearch.toLowerCase());
+    const matchesScore = minScore === '' || res.percentage >= Number(minScore);
+    const testDate = new Date(res.date).toISOString().split('T')[0];
+    const matchesStart = !dateRange.start || testDate >= dateRange.start;
+    const matchesEnd = !dateRange.end || testDate <= dateRange.end;
+    return matchesTopic && matchesScore && matchesStart && matchesEnd;
+  });
+  
   return (
     <div className="pt-32 pb-20 px-6 max-w-5xl mx-auto space-y-12">
       <motion.div 
@@ -1633,13 +1651,13 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
 
             <div className="flex flex-col sm:flex-row gap-5 pt-4">
               <button 
-                disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && testResults.filter(r => r.total <= 10).length >= 2)}
+                disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && (currentUser.trialsUsed || 0) >= 2) || (currentUser?.subscription === SubscriptionStatus.PENDING)}
                 onClick={() => startTest(topic, false, testLanguage, testDifficulty)}
                 className="flex-1 py-5 glass hover:bg-white/10 rounded-2xl font-black text-slate-300 border border-white/10 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
               >
                 {isLoading ? <Loader2 className="animate-spin" /> : <Zap size={20} />}
                 {isLoading ? 'Generating...' : 
-                 (currentUser?.subscription === SubscriptionStatus.FREE ? `5-Q Quick Test (${Math.max(0, 2 - testResults.filter(r => r.total <= 10).length)} left)` : `50-Q Sprint Test`)}
+                 (currentUser?.subscription === SubscriptionStatus.FREE ? `5-Q Quick Test (${Math.max(0, 2 - (currentUser.trialsUsed || 0))} left)` : `50-Q Sprint Test`)}
               </button>
               <button 
                 disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.PENDING)}
@@ -1656,23 +1674,116 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
           </div>
 
           <div className="space-y-6">
-            <h3 className="text-2xl font-black flex items-center gap-3 px-2 tracking-tight text-white">
-              <History className="text-indigo-400" /> Recent Performance
-            </h3>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-2">
+              <h3 className="text-2xl font-black flex items-center gap-3 tracking-tight text-white">
+                <History className="text-indigo-400" /> Recent Performance
+              </h3>
+              
+              <button 
+                onClick={() => setShowFilters(!showFilters)}
+                className={cn(
+                  "flex items-center gap-2 px-5 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all",
+                  showFilters ? "bg-indigo-500 text-white shadow-xl shadow-indigo-500/30" : "glass text-slate-400 hover:text-white"
+                )}
+              >
+                <Filter size={14} />
+                {showFilters ? 'Filters' : 'Filter Results'}
+              </button>
+            </div>
+
+            <AnimatePresence>
+              {showFilters && (
+                <motion.div 
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="glass p-6 rounded-[2rem] grid grid-cols-1 md:grid-cols-3 gap-6 border-white/5 bg-white/[0.01]">
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-500 ml-2">Search Exam</label>
+                      <div className="relative">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+                        <input 
+                          type="text"
+                          value={topicSearch}
+                          onChange={e => setTopicSearch(e.target.value)}
+                          placeholder="Search topic..."
+                          className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-indigo-500/50 transition-colors"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-500 ml-2">Min Score (%)</label>
+                      <div className="relative">
+                        <TrendingUp className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
+                        <input 
+                          type="number"
+                          value={minScore}
+                          onChange={e => setMinScore(e.target.value === '' ? '' : Number(e.target.value))}
+                          placeholder="Min Score %"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2.5 text-xs font-bold text-white focus:outline-none focus:border-indigo-500/50 transition-colors"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-black uppercase tracking-widest text-slate-500 ml-2">Date Range</label>
+                      <div className="flex gap-2">
+                        <div className="relative flex-1">
+                          <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={12} />
+                          <input 
+                            type="date"
+                            value={dateRange.start}
+                            onChange={e => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl pl-8 pr-2 py-2.5 text-[10px] font-bold text-white focus:outline-none focus:border-indigo-500/50 transition-colors appearance-none flex shadow-none"
+                          />
+                        </div>
+                        <div className="relative flex-1">
+                          <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={12} />
+                          <input 
+                            type="date"
+                            value={dateRange.end}
+                            onChange={e => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl pl-8 pr-2 py-2.5 text-[10px] font-bold text-white focus:outline-none focus:border-indigo-500/50 transition-colors appearance-none flex shadow-none"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {testResults.length === 0 ? (
+              {filteredResults.length === 0 ? (
                 <div className="col-span-full glass p-16 text-center rounded-[3rem] border-white/5">
                   <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-600">
                     <FileText size={32} />
                   </div>
-                  <p className="text-slate-500 font-bold">No tests taken yet. Start your first prep today!</p>
+                  <p className="text-slate-500 font-bold">
+                    {testResults.length === 0 ? "No tests taken yet. Start your first prep today!" : "No matches found for your active filters."}
+                  </p>
+                  {(topicSearch || minScore !== '' || dateRange.start || dateRange.end) && (
+                    <button 
+                      onClick={() => {
+                        setTopicSearch('');
+                        setMinScore('');
+                        setDateRange({ start: '', end: '' });
+                      }}
+                      className="mt-4 text-indigo-400 font-black text-[10px] uppercase tracking-widest hover:text-indigo-300 transition-colors"
+                    >
+                      Clear All Filters
+                    </button>
+                  )}
                 </div>
               ) : (
-                testResults.map((res, i) => (
+                filteredResults.map((res, i) => (
                   <motion.div 
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.1 }}
+                    transition={{ delay: i * 0.05 }}
                     key={res.id} 
                     className="glass p-6 rounded-[2.5rem] flex items-center justify-between border-white/5 hover:border-indigo-500/30 transition-colors group"
                   >

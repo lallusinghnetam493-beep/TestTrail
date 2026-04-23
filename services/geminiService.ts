@@ -5,9 +5,9 @@ import { Question, Difficulty } from "../types";
 export const generateQuestions = async (topic: string, count: number, language: string, difficulty: Difficulty): Promise<Question[]> => {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   
-  // Use flash model for speed when generating many questions (Flash is much faster than Pro for this volume)
-  // High volume structured data (50+ Qs) is better handled by Flash to avoid browser/network timeouts.
-  const modelName = count >= 50 ? "gemini-3-flash-preview" : "gemini-3.1-pro-preview";
+  // Use Flash model for all requests. 
+  // It is faster and more reliable for returning structured JSON at all volumes.
+  const modelName = "gemini-3-flash-preview";
 
   const systemInstruction = `You are an expert exam paper setter for Indian government exams (UPSC, SSC CGL, Banking, Railway, SBI PO, etc.).
   Your task is to generate high-quality, factually accurate multiple choice questions.
