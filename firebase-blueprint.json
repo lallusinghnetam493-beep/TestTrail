@@ -44,6 +44,31 @@
         "upiId": { "type": "string" },
         "subscriptionPrice": { "type": "number" }
       }
+    },
+    "Bookmark": {
+      "title": "Bookmark",
+      "description": "Saved question for review",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "examName": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "question": { "type": "string", "description": "JSON string of question object" }
+      },
+      "required": ["userId", "examName", "question"]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "User statistics for the global leaderboard",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "fullName": { "type": "string" },
+        "score": { "type": "number" },
+        "testsCompleted": { "type": "number" },
+        "averagePercentage": { "type": "number" }
+      },
+      "required": ["userId", "fullName", "score", "testsCompleted"]
     }
   },
   "firestore": {
@@ -58,6 +83,14 @@
     "/config/global": {
       "schema": "Config",
       "description": "Global app settings"
+    },
+    "/bookmarks/{bookmarkId}": {
+      "schema": "Bookmark",
+      "description": "Saved questions"
+    },
+    "/leaderboard/{userId}": {
+      "schema": "LeaderboardEntry",
+      "description": "Global ranking data"
     }
   }
 }
