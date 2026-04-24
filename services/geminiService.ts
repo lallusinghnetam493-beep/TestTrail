@@ -17,10 +17,14 @@ export const generateQuestions = async (topic: string, count: number, language: 
   2. Language: All content MUST be in ${language}.
   3. Difficulty: Adaptive ${difficulty} level.
   4. Accuracy: All facts must be 100% accurate.
-  5. Format: Return ONLY a valid JSON array of objects.
-  6. Conciseness: Keep question text and options clear and brief to ensure the response fits within limits.`;
+  5. Explanations: Provide a CLEAR, HELPFUL explanation for the correct answer (max 30 words).
+  6. Subject: Categorize each question into a relevant subject (e.g., Mathematics, History, Science, Reasoning).
+  7. Format: Return ONLY a valid JSON array of objects.
+  8. Conciseness: Keep question text and options clear and brief.
+  9. Language: Generate content in ${language}. If Hindi is requested, provide both the text and explanation in Hindi.
+  `;
 
-  const prompt = `Generate exactly ${count} multiple choice questions about "${topic}" in ${language}. Focus on breadth and depth suitable for ${difficulty} difficulty.`;
+  const prompt = `Generate exactly ${count} multiple choice questions about "${topic}" in ${language}. For each question, include a 'subject' and an 'explanation'. Focus on breadth and depth suitable for ${difficulty} difficulty.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -47,8 +51,10 @@ export const generateQuestions = async (topic: string, count: number, language: 
                 maxItems: 4
               },
               correctAnswerIndex: { type: Type.INTEGER },
+              explanation: { type: Type.STRING },
+              subject: { type: Type.STRING },
             },
-            required: ["id", "text", "options", "correctAnswerIndex"],
+            required: ["id", "text", "options", "correctAnswerIndex", "explanation", "subject"],
           },
         },
       },

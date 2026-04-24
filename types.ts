@@ -25,6 +25,24 @@ export interface Question {
   text: string;
   options: string[];
   correctAnswerIndex: number;
+  explanation?: string;
+  subject?: string;
+}
+
+export interface Bookmark {
+  id: string;
+  userId: string;
+  question: Question;
+  examName: string;
+  createdAt: string;
+}
+
+export interface LeaderboardEntry {
+  userId: string;
+  fullName: string;
+  score: number;
+  testsCompleted: number;
+  averagePercentage: number;
 }
 
 export interface TestResult {

@@ -34,7 +34,13 @@ import {
   Star,
   Filter,
   Calendar,
-  TrendingUp
+  TrendingUp,
+  BookMarked,
+  Award,
+  Info,
+  XCircle,
+  AlertTriangle,
+  LifeBuoy
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -44,7 +50,9 @@ import {
   Question, 
   TestResult, 
   AppConfig,
-  Difficulty
+  Difficulty,
+  Bookmark,
+  LeaderboardEntry
 } from './types';
 import { generateQuestions } from './services/geminiService';
 import { auth, db } from './firebase';
@@ -71,7 +79,8 @@ import {
   orderBy,
   onSnapshot,
   deleteDoc,
-  getDocFromServer
+  getDocFromServer,
+  limit
 } from 'firebase/firestore';
 
 function cn(...inputs: ClassValue[]) {
@@ -267,32 +276,103 @@ const TestInterface = ({
   );
 };
 
-const ResultPage = ({ lastResult, navigate }: { lastResult: TestResult | null, navigate: any }) => {
+const ResultPage = ({ 
+  lastResult, 
+  navigate, 
+  onBookmark, 
+  bookmarks 
+}: { 
+  lastResult: TestResult | null, 
+  navigate: any,
+  onBookmark: (q: Question, exam: string) => void,
+  bookmarks: Bookmark[]
+}) => {
   const [reviewMode, setReviewMode] = useState(false);
   if (!lastResult) return null;
+
+  // Weak Area Analysis
+  const analysis = useMemo(() => {
+    const subjects: Record<string, { total: number, correct: number }> = {};
+    lastResult.questions.forEach((q, i) => {
+      const sub = q.subject || 'General';
+      if (!subjects[sub]) subjects[sub] = { total: 0, correct: 0 };
+      subjects[sub].total++;
+      if (lastResult.userAnswers[i] === q.correctAnswerIndex) {
+        subjects[sub].correct++;
+      }
+    });
+    return Object.entries(subjects).map(([name, stats]) => ({
+      name,
+      percentage: (stats.correct / stats.total) * 100,
+      total: stats.total,
+      correct: stats.correct
+    })).sort((a, b) => a.percentage - b.percentage);
+  }, [lastResult]);
 
   if (reviewMode) {
     return (
       <div className="pt-24 pb-12 px-6 max-w-4xl mx-auto space-y-8">
          <div className="flex items-center justify-between">
-            <h2 className="text-3xl font-bold">Answer Review</h2>
-            <button onClick={() => setReviewMode(false)} className="px-4 py-2 glass rounded-xl font-bold">Back to Result</button>
+            <h2 className="text-3xl font-black text-white">Review Mastery</h2>
+            <button onClick={() => setReviewMode(false)} className="px-6 py-3 glass rounded-2xl font-bold flex items-center gap-2 hover:bg-white/10 transition-all">
+              <ChevronLeft size={20} /> Back to Result
+            </button>
          </div>
-         <div className="space-y-6">
+         <div className="space-y-8">
             {lastResult.questions.map((q, qIdx) => {
               const userAns = lastResult.userAnswers[qIdx];
               const isCorrect = userAns === q.correctAnswerIndex;
+              const isBookmarked = bookmarks.some(b => b.question.text === q.text);
+              
               return (
-                <div key={q.id} className={`glass p-6 rounded-2xl border-l-4 ${isCorrect ? 'border-l-green-500' : 'border-l-red-500'}`}>
-                  <p className="font-bold text-lg mb-4">{q.text}</p>
-                  <div className="grid grid-cols-1 gap-2">
+                <div key={q.id} className={`glass p-8 rounded-[2.5rem] border-l-4 transition-all hover:scale-[1.01] ${isCorrect ? 'border-l-green-500' : 'border-l-red-500 shadow-[0_0_40px_rgba(239,68,68,0.1)]'}`}>
+                  <div className="flex justify-between items-start gap-4 mb-6">
+                    <p className="font-bold text-xl text-white leading-relaxed">{q.text}</p>
+                    <button 
+                      onClick={() => onBookmark(q, lastResult.examName)}
+                      className={cn(
+                        "p-3 rounded-2xl transition-all shrink-0",
+                        isBookmarked ? "bg-yellow-500/20 text-yellow-500" : "bg-white/5 text-slate-500 hover:text-white"
+                      )}
+                    >
+                      <BookMarked size={20} fill={isBookmarked ? "currentColor" : "none"} />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
                      {q.options.map((opt, oIdx) => (
-                       <div key={oIdx} className={`p-3 rounded-xl border flex items-center gap-3 ${oIdx === q.correctAnswerIndex ? 'bg-green-500/10 border-green-500/30 text-green-400' : oIdx === userAns ? 'bg-red-500/10 border-red-500/30 text-red-400' : 'bg-white/5 border-white/5 text-slate-500'}`}>
-                         <span className="font-bold">{String.fromCharCode(65 + oIdx)}.</span>
+                       <div key={oIdx} className={cn(
+                         "p-4 rounded-2xl border flex items-center gap-3 font-medium transition-all",
+                         oIdx === q.correctAnswerIndex ? 'bg-green-500/10 border-green-500/30 text-green-400' : 
+                         oIdx === userAns ? 'bg-red-500/10 border-red-500/30 text-red-400' : 
+                         'bg-white/[0.02] border-white/5 text-slate-500'
+                       )}>
+                         <span className={cn(
+                           "w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black",
+                           oIdx === q.correctAnswerIndex ? 'bg-green-500/20' : 
+                           oIdx === userAns ? 'bg-red-500/20' : 'bg-white/5'
+                         )}>
+                           {String.fromCharCode(65 + oIdx)}
+                         </span>
                          <span>{opt}</span>
                        </div>
                      ))}
                   </div>
+
+                  {q.explanation && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-5 bg-indigo-500/5 rounded-[2rem] border border-indigo-500/10"
+                    >
+                      <div className="flex items-center gap-2 mb-2 text-indigo-400 text-[10px] font-black uppercase tracking-widest">
+                        <Info size={14} /> AI Explanation
+                      </div>
+                      <p className="text-sm text-slate-400 leading-relaxed italic">
+                        {q.explanation}
+                      </p>
+                    </motion.div>
+                  )}
                 </div>
               )
             })}
@@ -305,41 +385,113 @@ const ResultPage = ({ lastResult, navigate }: { lastResult: TestResult | null, n
     <motion.div 
       initial={{ opacity: 0, scale: 0.95 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="pt-24 pb-12 px-6 flex flex-col items-center max-w-3xl mx-auto space-y-8"
+      className="pt-24 pb-12 px-6 flex flex-col items-center max-w-4xl mx-auto space-y-10"
     >
-      <div className="text-center space-y-2">
+      <div className="text-center space-y-4">
         <motion.div 
           initial={{ scale: 0 }}
           animate={{ scale: 1 }}
           transition={{ type: "spring", stiffness: 200, damping: 10 }}
-          className="w-20 h-20 bg-yellow-500/20 rounded-full mx-auto flex items-center justify-center text-yellow-500"
+          className="w-24 h-24 bg-yellow-500/20 rounded-full mx-auto flex items-center justify-center text-yellow-500 shadow-2xl shadow-yellow-500/20"
         >
-          <Trophy size={48} />
+          <Trophy size={56} />
         </motion.div>
-        <h2 className="text-4xl font-black">Test Completed!</h2>
-        <p className="text-slate-400">Great effort! Performance breakdown for <span className="text-white font-bold">{lastResult.examName}</span></p>
+        <div className="space-y-1">
+          <h2 className="text-5xl font-black tracking-tight text-white">Test Completed!</h2>
+          <p className="text-slate-400 text-lg">Detailed performance breakdown for <span className="text-white font-bold">{lastResult.examName}</span></p>
+        </div>
       </div>
+
       <div className="w-full grid grid-cols-2 md:grid-cols-4 gap-4">
          {[
-           { label: 'Score', value: `${lastResult.score}/${lastResult.total}`, color: 'text-indigo-400' },
-           { label: 'Correct', value: lastResult.correct, color: 'text-green-400' },
-           { label: 'Wrong', value: lastResult.wrong, color: 'text-red-400' },
-           { label: 'Percentage', value: `${lastResult.percentage.toFixed(0)}%`, color: 'text-purple-400' },
+           { label: 'Score', value: `${lastResult.score}/${lastResult.total}`, icon: <Target size={14}/>, color: 'text-indigo-400' },
+           { label: 'Correct', value: lastResult.correct, icon: <CheckCircle2 size={14}/>, color: 'text-green-400' },
+           { label: 'Wrong', value: lastResult.wrong, icon: <XCircle size={14}/>, color: 'text-red-400' },
+           { label: 'Efficiency', value: `${lastResult.percentage.toFixed(0)}%`, icon: <TrendingUp size={14}/>, color: 'text-purple-400' },
          ].map((stat, i) => (
            <motion.div 
              key={i} 
-             whileHover={{ y: -5, scale: 1.02 }}
-             className="glass-card p-6 rounded-[2rem] text-center space-y-1"
+             whileHover={{ y: -5 }}
+             className="glass p-6 rounded-[2.5rem] flex flex-col items-center justify-center border-white/5"
            >
-             <div className="text-[10px] text-slate-500 font-black uppercase tracking-widest">{stat.label}</div>
-             <div className={`text-2xl font-black ${stat.color}`}>{stat.value}</div>
+             <div className="flex items-center gap-2 text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">
+               {stat.icon} {stat.label}
+             </div>
+             <div className={`text-3xl font-black ${stat.color}`}>{stat.value}</div>
            </motion.div>
          ))}
       </div>
-      <div className="w-full glass p-8 rounded-[2rem] space-y-6">
-        <div className="flex flex-col gap-4">
-          <button onClick={() => setReviewMode(true)} className="w-full py-4 glass hover:bg-white/10 rounded-2xl font-bold">Review Answers</button>
-          <button onClick={() => navigate('/dashboard')} className="w-full py-4 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-bold shadow-xl shadow-indigo-500/30">Back to Dashboard</button>
+
+      <div className="w-full grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="md:col-span-2 glass p-8 rounded-[3rem] space-y-8 border-white/5 h-fit">
+          <div className="flex items-center justify-between">
+            <h3 className="text-2xl font-black text-white flex items-center gap-3">
+              <BarChart3 className="text-indigo-400" /> Weak Area Analysis
+            </h3>
+            <span className="px-3 py-1 bg-white/5 rounded-full text-[10px] font-bold text-slate-400">Adaptive Insights</span>
+          </div>
+
+          <div className="space-y-6">
+            {analysis.map((item, i) => (
+              <div key={item.name} className="space-y-2">
+                <div className="flex justify-between items-end">
+                  <div>
+                    <div className="text-[10px] font-black uppercase text-slate-500 tracking-wider mb-1">{item.name}</div>
+                    <div className="text-sm font-bold text-white">
+                      {item.percentage < 40 ? 'Needs Urgent Attention' : item.percentage < 70 ? 'Moderate Progress' : 'Mastered'}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs font-black text-slate-400">{item.correct}/{item.total} Correct</div>
+                    <div className={cn(
+                      "text-sm font-black",
+                      item.percentage < 40 ? 'text-red-400' : item.percentage < 70 ? 'text-yellow-400' : 'text-green-400'
+                    )}>{item.percentage.toFixed(0)}%</div>
+                  </div>
+                </div>
+                <div className="h-2.5 bg-white/5 rounded-full overflow-hidden flex">
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${item.percentage}%` }}
+                    transition={{ delay: 0.5 + (i * 0.1), duration: 1 }}
+                    className={cn(
+                      "h-full rounded-full transition-all",
+                      item.percentage < 40 ? 'bg-red-500' : item.percentage < 70 ? 'bg-yellow-500' : 'bg-green-500'
+                    )}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="glass p-8 rounded-[3rem] space-y-6 border-white/5 flex flex-col h-full">
+           <div className="flex-1 space-y-6">
+             <div className="w-12 h-12 bg-indigo-500/10 rounded-2xl flex items-center justify-center text-indigo-400 border border-indigo-500/20">
+               <LifeBuoy size={24} />
+             </div>
+             <div className="space-y-2">
+               <h4 className="text-xl font-black text-white">Action Center</h4>
+               <p className="text-sm text-slate-400 leading-relaxed">
+                 Use the review mode to see detailed AI explanations for your weak areas. AI powered learning helps you stay ahead.
+               </p>
+             </div>
+           </div>
+           
+           <div className="space-y-4 pt-6 border-t border-white/10">
+              <button 
+                onClick={() => setReviewMode(true)} 
+                className="w-full py-5 glass hover:bg-white/10 rounded-2xl font-black text-indigo-400 flex items-center justify-center gap-2 transition-all"
+              >
+                <Eye size={18} /> Review Answers
+              </button>
+              <button 
+                onClick={() => navigate('/dashboard')} 
+                className="w-full py-5 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-white shadow-2xl shadow-indigo-500/30 flex items-center justify-center gap-2 transition-all"
+              >
+                Back to Prep <ArrowRight size={18} />
+              </button>
+           </div>
         </div>
       </div>
     </motion.div>
@@ -435,6 +587,8 @@ const AppContent: React.FC = () => {
   const [appConfig, setAppConfig] = useState<AppConfig>(DEFAULT_CONFIG);
   const [testResults, setTestResults] = useState<TestResult[]>([]);
   const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState('Please wait...');
@@ -615,12 +769,13 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     if (!currentUser) {
       setTestResults([]);
+      setBookmarks([]);
       return;
     }
 
     // Real-time listener for results
-    const q = query(collection(db, 'results'), where('userId', '==', currentUser.id), orderBy('date', 'desc'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const qResults = query(collection(db, 'results'), where('userId', '==', currentUser.id), orderBy('date', 'desc'));
+    const unsubResults = onSnapshot(qResults, (snapshot) => {
       const results = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data(),
@@ -632,8 +787,82 @@ const AppContent: React.FC = () => {
       handleFirestoreError(err, OperationType.GET, 'results');
     });
 
-    return () => unsubscribe();
+    // Real-time listener for bookmarks
+    const qBookmarks = query(collection(db, 'bookmarks'), where('userId', '==', currentUser.id));
+    const unsubBookmarks = onSnapshot(qBookmarks, (snapshot) => {
+      const res = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        question: typeof doc.data().question === 'string' ? JSON.parse(doc.data().question) : doc.data().question
+      } as Bookmark));
+      setBookmarks(res);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'bookmarks');
+    });
+
+    // Fetch Leaderboard
+    const qLeaderboard = query(collection(db, 'leaderboard'), orderBy('score', 'desc'), limit(10));
+    const unsubLeaderboard = onSnapshot(qLeaderboard, (snapshot) => {
+      const res = snapshot.docs.map(doc => doc.data() as LeaderboardEntry);
+      setLeaderboard(res);
+    }, (err) => {
+      handleFirestoreError(err, OperationType.GET, 'leaderboard');
+    });
+
+    return () => {
+      unsubResults();
+      unsubBookmarks();
+      unsubLeaderboard();
+    };
   }, [currentUser]);
+
+  const toggleBookmark = async (question: Question, examName: string) => {
+    if (!currentUser) return;
+    
+    // Use text for comparison
+    const existing = bookmarks.find(b => b.question.text === question.text);
+    if (existing) {
+      await deleteDoc(doc(db, 'bookmarks', existing.id));
+      setSuccessMessage('Bookmark removed');
+    } else {
+      const newBookmark: Omit<Bookmark, 'id'> = {
+        userId: currentUser.id,
+        question,
+        examName,
+        createdAt: new Date().toISOString()
+      };
+      await setDoc(doc(collection(db, 'bookmarks')), {
+        ...newBookmark,
+        question: JSON.stringify(newBookmark.question)
+      });
+      setSuccessMessage('Question bookmarked!');
+    }
+  };
+
+  const updateLeaderboard = async (result: TestResult) => {
+    if (!currentUser) return;
+    
+    const userRef = doc(db, 'leaderboard', currentUser.id);
+    const userDoc = await getDoc(userRef);
+    
+    if (userDoc.exists()) {
+      const data = userDoc.data() as LeaderboardEntry;
+      await updateDoc(userRef, {
+        score: data.score + result.score,
+        testsCompleted: data.testsCompleted + 1,
+        averagePercentage: ((data.averagePercentage * data.testsCompleted) + result.percentage) / (data.testsCompleted + 1)
+      });
+    } else {
+      const entry: LeaderboardEntry = {
+        userId: currentUser.id,
+        fullName: currentUser.fullName,
+        score: result.score,
+        testsCompleted: 1,
+        averagePercentage: result.percentage
+      };
+      await setDoc(userRef, entry);
+    }
+  };
 
   // --- Scroll to top on page change ---
   useEffect(() => {
@@ -892,6 +1121,7 @@ const AppContent: React.FC = () => {
       }
 
       setLastResult(result);
+      await updateLeaderboard(result);
       navigate('/result');
       setCurrentTest(null);
     } catch (err) {
@@ -1115,15 +1345,35 @@ const AppContent: React.FC = () => {
         {!isAuthChecking && currentUser ? (
           <>
             {!currentUser.isAdmin && (
-              <Link 
-                to="/dashboard" 
-                className={cn(
-                  "text-sm font-bold uppercase tracking-widest transition-colors",
-                  location.pathname === '/dashboard' ? "text-indigo-400" : "text-slate-400 hover:text-slate-200"
-                )}
-              >
-                Dashboard
-              </Link>
+              <>
+                <Link 
+                  to="/dashboard" 
+                  className={cn(
+                    "text-sm font-bold uppercase tracking-widest transition-colors",
+                    location.pathname === '/dashboard' ? "text-indigo-400" : "text-slate-400 hover:text-slate-200"
+                  )}
+                >
+                  Dashboard
+                </Link>
+                <Link 
+                  to="/leaderboard" 
+                  className={cn(
+                    "text-sm font-bold uppercase tracking-widest transition-colors flex items-center gap-1.5",
+                    location.pathname === '/leaderboard' ? "text-indigo-400" : "text-slate-400 hover:text-slate-200"
+                  )}
+                >
+                  <Award size={14} /> Leaderboard
+                </Link>
+                <Link 
+                  to="/bookmarks" 
+                  className={cn(
+                    "text-sm font-bold uppercase tracking-widest transition-colors flex items-center gap-1.5",
+                    location.pathname === '/bookmarks' ? "text-indigo-400" : "text-slate-400 hover:text-slate-200"
+                  )}
+                >
+                  <BookMarked size={14} /> Bookmarks
+                </Link>
+              </>
             )}
             {currentUser.isAdmin && (
               <Link 
@@ -1241,6 +1491,252 @@ const AppContent: React.FC = () => {
       </AnimatePresence>
     </nav>
   );
+
+const LeaderboardPage = ({ leaderboard, currentUser }: { leaderboard: LeaderboardEntry[], currentUser: User | null }) => {
+  return (
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="pt-32 pb-20 px-6 max-w-4xl mx-auto space-y-12"
+    >
+      <div className="flex flex-col md:flex-row justify-between items-end gap-6">
+        <div className="space-y-2">
+          <div className="flex items-center gap-3 text-indigo-400">
+            <Award size={32} strokeWidth={2.5}/>
+            <h2 className="text-4xl font-black tracking-tight text-white uppercase italic">Hall of <span className="text-indigo-400">Fame</span></h2>
+          </div>
+          <p className="text-slate-500 font-bold ml-1">The top percentile of aspirants mastering their preparation.</p>
+        </div>
+        <div className="glass px-6 py-3 rounded-2xl border-white/5 flex items-center gap-4">
+          <div className="text-right">
+            <div className="text-[9px] font-black uppercase tracking-widest text-slate-500">Global Aspirants</div>
+            <div className="text-xl font-black text-white">4,200+</div>
+          </div>
+          <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-400 border border-indigo-500/20">
+            <Trophy size={18} />
+          </div>
+        </div>
+      </div>
+
+      <div className="glass rounded-[3rem] border-white/5 overflow-hidden shadow-2xl">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="border-b border-white/5">
+                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-slate-500">Rank</th>
+                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-slate-500">Aspirant</th>
+                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">Tests</th>
+                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-slate-500 text-center">Avg %</th>
+                <th className="px-8 py-6 text-[10px] font-black uppercase tracking-widest text-slate-500 text-right">Total Score</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/[0.02]">
+              {leaderboard.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="px-8 py-20 text-center text-slate-500 font-bold">
+                    No data yet. Complete a test to start the ranking!
+                  </td>
+                </tr>
+              ) : (
+                leaderboard.map((entry, index) => {
+                  const isUser = currentUser && entry.userId === currentUser.id;
+                  return (
+                    <motion.tr 
+                      key={entry.userId}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className={cn(
+                        "transition-colors",
+                        isUser ? "bg-indigo-500/10" : "hover:bg-white/[0.02]"
+                      )}
+                    >
+                      <td className="px-8 py-6">
+                        <div className={cn(
+                          "w-10 h-10 rounded-xl flex items-center justify-center font-black italic text-sm",
+                          index === 0 ? "bg-yellow-500 text-black shadow-xl shadow-yellow-500/30 ring-4 ring-yellow-500/20" :
+                          index === 1 ? "bg-slate-300 text-black shadow-xl shadow-slate-300/30" :
+                          index === 2 ? "bg-orange-400 text-black shadow-xl shadow-orange-400/30" :
+                          "bg-white/5 text-slate-400"
+                        )}>
+                          #{index + 1}
+                        </div>
+                      </td>
+                      <td className="px-8 py-6">
+                        <div className="flex items-center gap-4">
+                          <div className={cn(
+                            "w-10 h-10 rounded-full flex items-center justify-center font-black text-xs",
+                            isUser ? "bg-indigo-500 text-white" : "bg-slate-800 text-slate-400"
+                          )}>
+                            {entry.fullName.charAt(0)}
+                          </div>
+                          <div>
+                            <div className="font-black text-white flex items-center gap-2">
+                              {entry.fullName}
+                              {isUser && <span className="text-[8px] bg-indigo-500 px-2 py-0.5 rounded-full uppercase tracking-tighter">You</span>}
+                            </div>
+                            <div className="text-[10px] font-bold text-slate-500">Tier {entry.averagePercentage > 80 ? 'I' : entry.averagePercentage > 50 ? 'II' : 'III'} Aspirant</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-8 py-6 text-center font-bold text-slate-300">{entry.testsCompleted}</td>
+                      <td className="px-8 py-6 text-center">
+                        <span className={cn(
+                          "px-3 py-1 rounded-full text-[10px] font-black",
+                          entry.averagePercentage > 80 ? "bg-green-500/10 text-green-400" : 
+                          entry.averagePercentage > 50 ? "bg-yellow-500/10 text-yellow-400" : "bg-red-500/10 text-red-400"
+                        )}>
+                          {entry.averagePercentage.toFixed(1)}%
+                        </span>
+                      </td>
+                      <td className="px-8 py-6 text-right font-black text-indigo-400 tracking-tight text-lg">
+                        {entry.score.toLocaleString()}
+                      </td>
+                    </motion.tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </motion.div>
+  );
+};
+
+const BookmarksPage = ({ bookmarks, onRemove, navigate }: { bookmarks: Bookmark[], onRemove: (q: Question, exam: string) => void, navigate: any }) => {
+  const [selectedBookmark, setSelectedBookmark] = useState<Bookmark | null>(null);
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="pt-32 pb-20 px-6 max-w-4xl mx-auto space-y-12"
+    >
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+        <div className="space-y-2">
+          <div className="flex items-center gap-3 text-yellow-400">
+            <BookMarked size={32} strokeWidth={2.5}/>
+            <h2 className="text-4xl font-black tracking-tight text-white uppercase italic">Saved <span className="text-yellow-400">Review</span></h2>
+          </div>
+          <p className="text-slate-500 font-bold ml-1">Review questions you found challenging or important.</p>
+        </div>
+        <button 
+          onClick={() => navigate('/dashboard')}
+          className="px-6 py-3 glass hover:bg-white/10 rounded-2xl font-black text-[10px] uppercase tracking-widest text-slate-400 transition-all border border-white/5"
+        >
+          Back to Dashboard
+        </button>
+      </div>
+
+      {bookmarks.length === 0 ? (
+        <div className="glass p-20 rounded-[3rem] text-center space-y-6 flex flex-col items-center border-white/5 shadow-2xl">
+          <div className="w-20 h-20 bg-white/5 rounded-full flex items-center justify-center text-slate-700">
+            <BookMarked size={36} />
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-2xl font-black text-white leading-none">No Saved Questions</h3>
+            <p className="text-slate-500 font-medium max-w-xs mx-auto">Bookmark questions during test review to see them here later.</p>
+          </div>
+          <button 
+            onClick={() => navigate('/dashboard')}
+            className="px-10 py-5 bg-indigo-500 hover:bg-indigo-600 rounded-[2rem] font-black text-sm text-white shadow-2xl shadow-indigo-500/20 active:scale-95 transition-all"
+          >
+            Go to Practice
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="space-y-4">
+             {bookmarks.map((bookmark) => (
+                <motion.div 
+                  key={bookmark.id}
+                  layoutId={bookmark.id}
+                  onClick={() => setSelectedBookmark(bookmark)}
+                  className={cn(
+                    "glass p-6 rounded-[2.5rem] border transition-all cursor-pointer group hover:bg-white/5",
+                    selectedBookmark?.id === bookmark.id ? "border-indigo-500/50 bg-indigo-500/5" : "border-white/5"
+                  )}
+                >
+                  <div className="flex justify-between items-start gap-3 mb-4">
+                    <span className="px-3 py-1 bg-white/5 rounded-full text-[8px] font-black uppercase tracking-widest text-slate-500">
+                      {bookmark.examName}
+                    </span>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); onRemove(bookmark.question, bookmark.examName); }}
+                      className="p-2 text-slate-600 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                  <p className="font-bold text-white text-sm line-clamp-2 leading-relaxed group-hover:line-clamp-none transition-all">
+                    {bookmark.question.text}
+                  </p>
+                  <div className="mt-4 flex items-center gap-2 text-indigo-400 text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity">
+                    See Solution <ChevronRight size={12} />
+                  </div>
+                </motion.div>
+             ))}
+          </div>
+
+          <div className="hidden md:block">
+            <AnimatePresence mode="wait">
+              {selectedBookmark ? (
+                <motion.div 
+                  key={selectedBookmark.id}
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -20 }}
+                  className="glass p-8 rounded-[3rem] border-white/5 sticky top-32 space-y-8"
+                >
+                  <div className="space-y-4">
+                    <div className="text-[10px] font-black uppercase tracking-widest text-indigo-400">Question Details</div>
+                    <p className="text-xl font-bold text-white leading-relaxed">{selectedBookmark.question.text}</p>
+                  </div>
+
+                  <div className="space-y-3">
+                    {selectedBookmark.question.options.map((opt, i) => (
+                      <div key={i} className={cn(
+                        "p-4 rounded-2xl border flex items-center gap-3 font-medium",
+                        i === selectedBookmark.question.correctAnswerIndex ? "bg-green-500/10 border-green-500/20 text-green-400" : "bg-white/[0.02] border-white/5 text-slate-500"
+                      )}>
+                        <span className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-xs font-black">
+                          {String.fromCharCode(65 + i)}
+                        </span>
+                        <span>{opt}</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {selectedBookmark.question.explanation && (
+                    <div className="p-6 bg-indigo-500/5 rounded-[2.5rem] space-y-3 border border-indigo-500/10">
+                      <div className="flex items-center gap-2 text-indigo-400 text-[10px] font-black uppercase tracking-widest">
+                        <Info size={14} /> AI Explanation
+                      </div>
+                      <p className="text-sm text-slate-400 leading-relaxed italic">{selectedBookmark.question.explanation}</p>
+                    </div>
+                  )}
+                </motion.div>
+              ) : (
+                <div className="glass p-8 rounded-[3rem] border-white/5 sticky top-32 flex flex-col items-center justify-center text-center space-y-4 h-[400px]">
+                   <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center text-slate-700">
+                     <Target size={24} />
+                   </div>
+                   <div className="space-y-1">
+                     <h4 className="text-lg font-black text-slate-300 uppercase tracking-tight">Select a Question</h4>
+                     <p className="text-xs text-slate-500 max-w-[200px] font-medium leading-relaxed">
+                       Choose a bookmarked question from the list to see its detailed options and AI-powered solution.
+                     </p>
+                   </div>
+                </div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+      )}
+    </motion.div>
+  );
+};
 
 // --- Support Components (Moved Outside) ---
 interface HomeProps {
@@ -1844,6 +2340,27 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
                 </div>
               ))}
             </div>
+            
+            <div className="pt-6 border-t border-white/5 space-y-3">
+              <button 
+                onClick={() => navigate('/leaderboard')}
+                className="w-full p-4 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 rounded-2xl flex items-center justify-between group transition-all"
+              >
+                <div className="flex items-center gap-3 font-black text-[10px] uppercase tracking-widest">
+                  <Award size={16} /> View Leaderboard
+                </div>
+                <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform" />
+              </button>
+              <button 
+                onClick={() => navigate('/bookmarks')}
+                className="w-full p-4 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-500 rounded-2xl flex items-center justify-between group transition-all"
+              >
+                <div className="flex items-center gap-3 font-black text-[10px] uppercase tracking-widest">
+                  <BookMarked size={16} /> Saved Questions
+                </div>
+                <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform" />
+              </button>
+            </div>
           </div>
 
           <div className="glass p-8 rounded-[3rem] border-white/10 bg-gradient-to-br from-purple-500/5 to-indigo-500/5">
@@ -2350,7 +2867,21 @@ const Payment: React.FC<PaymentProps> = ({ appConfig, isLoading, handleRazorpayP
                   setUserAnswers={setUserAnswers}
                   submitTest={submitTest}
                 /> : <Navigate to="/auth" />} />
-                <Route path="/result" element={currentUser ? <ResultPage lastResult={lastResult} navigate={navigate} /> : <Navigate to="/auth" />} />
+                <Route path="/result" element={currentUser ? <ResultPage 
+                  lastResult={lastResult} 
+                  navigate={navigate} 
+                  onBookmark={toggleBookmark}
+                  bookmarks={bookmarks}
+                /> : <Navigate to="/auth" />} />
+                <Route path="/leaderboard" element={currentUser ? <LeaderboardPage 
+                  leaderboard={leaderboard}
+                  currentUser={currentUser}
+                /> : <Navigate to="/auth" />} />
+                <Route path="/bookmarks" element={currentUser ? <BookmarksPage 
+                  bookmarks={bookmarks}
+                  onRemove={toggleBookmark}
+                  navigate={navigate}
+                /> : <Navigate to="/auth" />} />
                 <Route path="/admin" element={currentUser?.isAdmin ? <AdminPanel 
                   users={users}
                   appConfig={appConfig}
