@@ -18,6 +18,7 @@ export interface User {
   sessionId?: string;
   payment_id?: string;
   updated_at?: any;
+  photoURL?: string;
 }
 
 export interface Question {
@@ -43,6 +44,7 @@ export interface LeaderboardEntry {
   score: number;
   testsCompleted: number;
   averagePercentage: number;
+  photoURL?: string;
 }
 
 export interface TestResult {

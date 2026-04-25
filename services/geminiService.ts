@@ -82,3 +82,38 @@ export const generateQuestions = async (topic: string, count: number, language: 
     throw new Error(error instanceof Error ? error.message : "Failed to generate test. Please check your connection.");
   }
 };
+
+export const generateAvatar = async (userName: string): Promise<string> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  
+  const prompt = `A professional, clean, minimalist 3D isometric avatar for a competitive exam aspirant named ${userName}. Style: Modern, tech-focused, vibrant colors (indigo/purple), studio lighting, high quality 3D render.`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash-image',
+      contents: {
+        parts: [
+          {
+            text: prompt,
+          },
+        ],
+      },
+      config: {
+        imageConfig: {
+          aspectRatio: "1:1",
+        },
+      },
+    });
+
+    for (const part of response.candidates[0].content.parts) {
+      if (part.inlineData) {
+        return `data:image/png;base64,${part.inlineData.data}`;
+      }
+    }
+    
+    throw new Error("No image data returned from AI");
+  } catch (error) {
+    console.error("Avatar Generation Error:", error);
+    throw new Error("Failed to generate AI avatar. Please try again.");
+  }
+};

@@ -14,7 +14,8 @@
         "isAdmin": { "type": "boolean" },
         "payment_id": { "type": "string", "description": "Razorpay payment ID" },
         "updated_at": { "type": "string", "format": "date-time" },
-        "sessionId": { "type": "string" }
+        "sessionId": { "type": "string" },
+        "photoURL": { "type": "string" }
       },
       "required": ["id", "email", "subscription"]
     },
@@ -66,7 +67,8 @@
         "fullName": { "type": "string" },
         "score": { "type": "number" },
         "testsCompleted": { "type": "number" },
-        "averagePercentage": { "type": "number" }
+        "averagePercentage": { "type": "number" },
+        "photoURL": { "type": "string" }
       },
       "required": ["userId", "fullName", "score", "testsCompleted"]
     }

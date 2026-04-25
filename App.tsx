@@ -40,7 +40,10 @@ import {
   Info,
   XCircle,
   AlertTriangle,
-  LifeBuoy
+  LifeBuoy,
+  Camera,
+  Sparkles,
+  UploadCloud
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -54,7 +57,7 @@ import {
   Bookmark,
   LeaderboardEntry
 } from './types';
-import { generateQuestions } from './services/geminiService';
+import { generateQuestions, generateAvatar } from './services/geminiService';
 import { auth, db } from './firebase';
 import { BrowserRouter, Routes, Route, useNavigate, useLocation, Link, Navigate } from 'react-router-dom';
 import PrivacyPolicy from './components/PrivacyPolicy';
@@ -850,7 +853,8 @@ const AppContent: React.FC = () => {
       await updateDoc(userRef, {
         score: data.score + result.score,
         testsCompleted: data.testsCompleted + 1,
-        averagePercentage: ((data.averagePercentage * data.testsCompleted) + result.percentage) / (data.testsCompleted + 1)
+        averagePercentage: ((data.averagePercentage * data.testsCompleted) + result.percentage) / (data.testsCompleted + 1),
+        photoURL: currentUser.photoURL || null
       });
     } else {
       const entry: LeaderboardEntry = {
@@ -858,7 +862,8 @@ const AppContent: React.FC = () => {
         fullName: currentUser.fullName,
         score: result.score,
         testsCompleted: 1,
-        averagePercentage: result.percentage
+        averagePercentage: result.percentage,
+        photoURL: currentUser.photoURL || null
       };
       await setDoc(userRef, entry);
     }
@@ -1390,13 +1395,26 @@ const AppContent: React.FC = () => {
               <Link 
                 to="/profile" 
                 className={cn(
-                  "flex items-center gap-2 px-4 py-2 rounded-xl transition-all border",
+                  "flex items-center gap-2 pr-4 pl-2 py-2 rounded-xl transition-all border",
                   location.pathname === '/profile' 
                     ? "bg-indigo-500/10 border-indigo-500/30 text-indigo-400" 
                     : "border-transparent text-slate-400 hover:bg-white/5"
                 )}
               >
-                <UserCircle size={20} />
+                <div className="w-8 h-8 rounded-full overflow-hidden bg-indigo-500/10 border border-white/10 shrink-0">
+                  {currentUser.photoURL ? (
+                    <img 
+                      src={currentUser.photoURL} 
+                      alt={currentUser.fullName} 
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-indigo-400">
+                      <UserCircle size={20} />
+                    </div>
+                  )}
+                </div>
                 <span className="text-sm font-bold">{currentUser.fullName.split(' ')[0]}</span>
               </Link>
             )}
@@ -1450,8 +1468,17 @@ const AppContent: React.FC = () => {
             <div className="p-2 text-slate-400"><X /></div>
           ) : (
             currentUser ? (
-              <div className="w-10 h-10 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-400 border border-indigo-500/20">
-                <UserCircle size={24} />
+              <div className="w-10 h-10 rounded-full overflow-hidden bg-indigo-500/10 flex items-center justify-center text-indigo-400 border border-indigo-500/20">
+                {currentUser.photoURL ? (
+                  <img 
+                    src={currentUser.photoURL} 
+                    alt={currentUser.fullName} 
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <UserCircle size={24} />
+                )}
               </div>
             ) : (
               <div className="p-2 text-slate-400"><Menu /></div>
@@ -1565,10 +1592,14 @@ const LeaderboardPage = ({ leaderboard, currentUser }: { leaderboard: Leaderboar
                       <td className="px-8 py-6">
                         <div className="flex items-center gap-4">
                           <div className={cn(
-                            "w-10 h-10 rounded-full flex items-center justify-center font-black text-xs",
+                            "w-10 h-10 rounded-full overflow-hidden flex items-center justify-center font-black text-xs",
                             isUser ? "bg-indigo-500 text-white" : "bg-slate-800 text-slate-400"
                           )}>
-                            {entry.fullName.charAt(0)}
+                            {entry.photoURL ? (
+                              <img src={entry.photoURL} alt={entry.fullName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                            ) : (
+                              entry.fullName.charAt(0)
+                            )}
                           </div>
                           <div>
                             <div className="font-black text-white flex items-center gap-2">
@@ -2045,9 +2076,25 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
         animate={{ opacity: 1, x: 0 }}
         className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6"
       >
-        <div className="space-y-1">
-          <h2 className="text-4xl font-black tracking-tight text-white">Hello, {currentUser?.fullName.split(' ')[0]}!</h2>
-          <p className="text-slate-400 font-medium italic">Ready for today's prep challenge?</p>
+        <div className="flex items-center gap-5">
+           <div className="w-20 h-20 rounded-full overflow-hidden border-4 border-white/5 shadow-2xl relative shrink-0">
+              {currentUser?.photoURL ? (
+                <img 
+                  src={currentUser.photoURL} 
+                  alt={currentUser.fullName} 
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="w-full h-full bg-indigo-500/10 flex items-center justify-center text-indigo-400">
+                  <UserCircle size={40} />
+                </div>
+              )}
+           </div>
+           <div className="space-y-1">
+             <h2 className="text-4xl font-black tracking-tight text-white line-clamp-1 truncate max-w-[300px]">Hello, {currentUser?.fullName.split(' ')[0]}!</h2>
+             <p className="text-slate-400 font-medium italic">Ready for today's prep challenge?</p>
+           </div>
         </div>
         <div className={cn(
           "px-6 py-2.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border shadow-xl",
@@ -2450,6 +2497,52 @@ const Payment: React.FC<PaymentProps> = ({ appConfig, isLoading, handleRazorpayP
 
   const ProfilePage = () => {
     if (!currentUser) return null;
+    const [isGenerating, setIsGenerating] = useState(false);
+    const [isUploading, setIsUploading] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const updateProfilePic = async (url: string) => {
+      try {
+        await updateDoc(doc(db, 'users', currentUser.id), { photoURL: url });
+        setCurrentUser(prev => prev ? { ...prev, photoURL: url } : null);
+        setSuccessMessage('Profile picture updated successfully!');
+      } catch (err) {
+        console.error("Error updating profile picture:", err);
+        setErrorMessage('Failed to update profile picture.');
+      }
+    };
+
+    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      if (file.size > 1024 * 1024) {
+        setErrorMessage('Image size must be less than 1MB.');
+        return;
+      }
+
+      setIsUploading(true);
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const base64 = event.target?.result as string;
+        await updateProfilePic(base64);
+        setIsUploading(false);
+      };
+      reader.readAsDataURL(file);
+    };
+
+    const handleAiGenerate = async () => {
+      setIsGenerating(true);
+      setLoadingMessage('Generating your AI avatar...');
+      try {
+        const avatarUrl = await generateAvatar(currentUser.fullName);
+        await updateProfilePic(avatarUrl);
+      } catch (err) {
+        setErrorMessage(err instanceof Error ? err.message : 'Failed to generate AI avatar.');
+      } finally {
+        setIsGenerating(false);
+      }
+    };
 
     return (
       <motion.div 
@@ -2457,12 +2550,66 @@ const Payment: React.FC<PaymentProps> = ({ appConfig, isLoading, handleRazorpayP
         animate={{ opacity: 1, y: 0 }}
         className="pt-24 pb-12 px-6 flex flex-col items-center max-w-2xl mx-auto space-y-8"
       >
-        <div className="text-center space-y-4">
-          <div className="w-24 h-24 bg-indigo-500/10 rounded-full mx-auto flex items-center justify-center text-indigo-400 border border-indigo-500/20">
-            <UserCircle size={48} />
+        <div className="text-center space-y-6 w-full flex flex-col items-center">
+          <div className="relative group">
+            <div className="w-32 h-32 rounded-full overflow-hidden bg-indigo-500/10 border-4 border-indigo-500/20 shadow-2xl relative">
+              {currentUser.photoURL ? (
+                <img 
+                  src={currentUser.photoURL} 
+                  alt={currentUser.fullName} 
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-indigo-400">
+                  <UserCircle size={64} />
+                </div>
+              )}
+              
+              {(isGenerating || isUploading) && (
+                <div className="absolute inset-0 bg-black/60 flex items-center justify-center backdrop-blur-sm">
+                  <Loader2 className="text-white animate-spin" size={32} />
+                </div>
+              )}
+            </div>
+            
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="absolute bottom-1 right-1 p-2.5 bg-indigo-500 text-white rounded-full shadow-xl hover:bg-indigo-600 transition-all scale-90 group-hover:scale-100"
+              title="Upload Photo"
+            >
+              <Camera size={18} />
+            </button>
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleFileUpload} 
+              accept="image/*" 
+              className="hidden" 
+            />
           </div>
-          <h2 className="text-4xl font-black tracking-tight">{currentUser.fullName}</h2>
-          <p className="text-slate-400">Manage your profile and subscription</p>
+
+          <div className="space-y-2">
+            <h2 className="text-4xl font-black tracking-tight">{currentUser.fullName}</h2>
+            <p className="text-slate-400">Manage your profile and appearance</p>
+          </div>
+
+          <div className="flex gap-3">
+             <button 
+               onClick={() => fileInputRef.current?.click()}
+               disabled={isGenerating || isUploading}
+               className="flex items-center gap-2 px-6 py-3 glass rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-white/10 transition-all disabled:opacity-50"
+             >
+               <UploadCloud size={16} /> Upload
+             </button>
+             <button 
+               onClick={handleAiGenerate}
+               disabled={isGenerating || isUploading}
+               className="flex items-center gap-2 px-6 py-3 bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-500/30 transition-all disabled:opacity-50"
+             >
+               <Sparkles size={16} /> AI Avatar
+             </button>
+          </div>
         </div>
 
         <div className="w-full glass p-8 rounded-[2.5rem] space-y-8">
