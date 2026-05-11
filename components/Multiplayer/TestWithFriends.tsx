@@ -61,6 +61,47 @@ const formatTime = (s: number) => {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 };
 
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  const msg = error instanceof Error ? error.message : String(error);
+  if (msg.includes('insufficient permissions')) {
+    throw new Error("Security Error: You don't have permission to perform this action. Please check if you are logged in correctly.");
+  }
+  throw new Error(JSON.stringify(errInfo));
+}
+
 export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ currentUser }) => {
   const navigate = useNavigate();
   const [roomId, setRoomId] = useState('');
@@ -135,37 +176,49 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
       const newRoomId = generateRoomId();
       const questions = await generateQuestions(topic, settings.questionCount, settings.language, settings.difficulty);
       
-      const roomData: Partial<Room> = {
+      const roomData = {
         id: newRoomId,
         hostId: currentUser.id,
         status: 'waiting',
         topic,
-        questions: JSON.stringify(questions) as any,
+        questions: JSON.stringify(questions),
         currentQuestionIndex: 0,
         timer: settings.timePerQuestion,
         players: [currentUser.id],
         createdAt: serverTimestamp(),
         settings: {
-          ...settings,
-          difficulty: settings.difficulty
+          category: settings.category || 'General',
+          difficulty: settings.difficulty,
+          language: settings.language,
+          questionCount: settings.questionCount,
+          timePerQuestion: settings.timePerQuestion
         }
       };
 
-      await setDoc(doc(db, 'rooms', newRoomId), roomData);
+      try {
+        await setDoc(doc(db, 'rooms', newRoomId), roomData);
+      } catch (err) {
+        handleFirestoreError(err, OperationType.CREATE, `rooms/${newRoomId}`);
+      }
 
       // Create host's score entry
       const scoreId = `${newRoomId}_${currentUser.id}`;
-      await setDoc(doc(db, 'scores', scoreId), {
-        roomId: newRoomId,
-        playerId: currentUser.id,
-        playerName: currentUser.fullName,
-        photoURL: currentUser.photoURL || null,
-        score: 0,
-        answers: new Array(questions.length).fill(null),
-        isReady: true,
-        lastActive: serverTimestamp(),
-        isHost: true
-      });
+      try {
+        await setDoc(doc(db, 'scores', scoreId), {
+          id: scoreId,
+          roomId: newRoomId,
+          playerId: currentUser.id,
+          playerName: currentUser.fullName,
+          photoURL: currentUser.photoURL || null,
+          score: 0,
+          answers: new Array(questions.length).fill(null),
+          isReady: true,
+          lastActive: serverTimestamp(),
+          isHost: true
+        });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.CREATE, `scores/${scoreId}`);
+      }
 
       setRoom({ ...roomData, questions, id: newRoomId } as Room);
       setCurrentAnswers(new Array(questions.length).fill(null));
@@ -200,17 +253,22 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
 
       const questions = JSON.parse(roomData.questions);
       const scoreId = `${code.toUpperCase()}_${currentUser.id}`;
-      await setDoc(doc(db, 'scores', scoreId), {
-        roomId: code.toUpperCase(),
-        playerId: currentUser.id,
-        playerName: currentUser.fullName,
-        photoURL: currentUser.photoURL || null,
-        score: 0,
-        answers: new Array(questions.length).fill(null),
-        isReady: true,
-        lastActive: serverTimestamp(),
-        isHost: false
-      });
+      try {
+        await setDoc(doc(db, 'scores', scoreId), {
+          id: scoreId,
+          roomId: code.toUpperCase(),
+          playerId: currentUser.id,
+          playerName: currentUser.fullName,
+          photoURL: currentUser.photoURL || null,
+          score: 0,
+          answers: new Array(questions.length).fill(null),
+          isReady: true,
+          lastActive: serverTimestamp(),
+          isHost: false
+        });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.CREATE, `scores/${scoreId}`);
+      }
 
       setRoom({ ...roomData, questions, id: code.toUpperCase() } as Room);
       setCurrentAnswers(new Array(questions.length).fill(null));
