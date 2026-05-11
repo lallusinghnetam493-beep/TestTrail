@@ -420,7 +420,7 @@ const MultiplayerDashboard = ({ onJoin, onCreate, isLoading, error }: any) => {
   const [code, setCode] = useState('');
   const [topic, setTopic] = useState('');
   const [settings, setSettings] = useState({
-    timePerQuestion: 30,
+    timePerQuestion: 120,
     difficulty: 'Medium' as Difficulty,
     language: 'English',
     questionCount: 10,
@@ -485,14 +485,17 @@ const MultiplayerDashboard = ({ onJoin, onCreate, isLoading, error }: any) => {
              
              <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                   <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest ml-2">Language</label>
+                   <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest ml-2">Time/Question</label>
                    <select 
-                     value={settings.language}
-                     onChange={e => setSettings({...settings, language: e.target.value})}
+                     value={settings.timePerQuestion}
+                     onChange={e => setSettings({...settings, timePerQuestion: Number(e.target.value)})}
                      className="w-full p-3 bg-white/5 border border-white/10 rounded-xl font-bold text-sm"
                    >
-                     <option value="English">English</option>
-                     <option value="Hindi">Hindi</option>
+                     <option value={30}>30 Secs</option>
+                     <option value={60}>1 Min</option>
+                     <option value={120}>2 Mins</option>
+                     <option value={180}>3 Mins</option>
+                     <option value={300}>5 Mins</option>
                    </select>
                 </div>
                 <div className="space-y-1">
@@ -689,8 +692,17 @@ const RoomLobby = ({ room, scores, currentUser, onStart, onKick, onLeave, onEnd 
 };
 
 const MultiplayerQuiz = ({ room, scores, currentUser, timeLeft, currentAnswers, onAnswer }: any) => {
-  const currentQ = room.questions[room.currentQuestionIndex];
+  const currentQ = room.questions && room.questions[room.currentQuestionIndex];
   const selectedIdx = currentAnswers[room.currentQuestionIndex];
+
+  if (!currentQ) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen text-white space-y-4">
+        <Loader2 className="w-12 h-12 text-indigo-500 animate-spin" />
+        <p className="font-bold text-xl">Loading question...</p>
+      </div>
+    );
+  }
   
   return (
     <div className="pt-24 pb-12 px-6 min-h-screen flex flex-col lg:flex-row gap-8 max-w-7xl mx-auto">
