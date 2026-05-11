@@ -71,6 +71,38 @@
         "photoURL": { "type": "string" }
       },
       "required": ["userId", "fullName", "score", "testsCompleted"]
+    },
+    "Room": {
+      "title": "Room",
+      "description": "Multiplayer test room",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "hostId": { "type": "string" },
+        "status": { "type": "string", "enum": ["waiting", "starting", "playing", "finished"] },
+        "topic": { "type": "string" },
+        "questions": { "type": "string", "description": "JSON string of questions" },
+        "currentQuestionIndex": { "type": "number" },
+        "timer": { "type": "number" },
+        "players": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "settings": { "type": "object" }
+      }
+    },
+    "RoomScore": {
+      "title": "RoomScore",
+      "description": "Player's live performance in a room",
+      "type": "object",
+      "properties": {
+        "roomId": { "type": "string" },
+        "playerId": { "type": "string" },
+        "playerName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "score": { "type": "number" },
+        "answers": { "type": "array", "items": { "type": "number" } },
+        "isReady": { "type": "boolean" },
+        "lastActive": { "type": "string", "format": "date-time" }
+      }
     }
   },
   "firestore": {
@@ -93,6 +125,14 @@
     "/leaderboard/{userId}": {
       "schema": "LeaderboardEntry",
       "description": "Global ranking data"
+    },
+    "/rooms/{roomId}": {
+      "schema": "Room",
+      "description": "Multiplayer rooms"
+    },
+    "/scores/{scoreId}": {
+      "schema": "RoomScore",
+      "description": "Player scores in rooms"
     }
   }
 }

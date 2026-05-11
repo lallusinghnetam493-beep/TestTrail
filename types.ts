@@ -65,3 +65,36 @@ export interface AppConfig {
   upiId: string;
   subscriptionPrice: number;
 }
+
+export type RoomStatus = 'waiting' | 'starting' | 'playing' | 'finished';
+
+export interface Room {
+  id: string;
+  hostId: string;
+  status: RoomStatus;
+  topic: string;
+  questions: Question[];
+  currentQuestionIndex: number;
+  timer: number;
+  players: string[]; // List of UIDs
+  createdAt: any;
+  settings: {
+    timePerQuestion: number;
+    difficulty: Difficulty;
+    language: string;
+    questionCount: number;
+  };
+}
+
+export interface RoomScore {
+  id: string;
+  roomId: string;
+  playerId: string;
+  playerName: string;
+  photoURL?: string;
+  score: number;
+  answers: (number | null)[];
+  isReady: boolean;
+  lastActive: any;
+  isHost?: boolean;
+}

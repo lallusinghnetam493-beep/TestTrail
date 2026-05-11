@@ -24,6 +24,7 @@ import {
   Menu,
   X,
   Mail,
+  Users,
   Search,
   FileText,
   Target,
@@ -63,6 +64,7 @@ import { BrowserRouter, Routes, Route, useNavigate, useLocation, Link, Navigate 
 import PrivacyPolicy from './components/PrivacyPolicy';
 import TermsAndConditions from './components/TermsAndConditions';
 import ContactUs from './components/ContactUs';
+import { TestWithFriends } from './components/Multiplayer/TestWithFriends';
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
@@ -1370,6 +1372,15 @@ const AppContent: React.FC = () => {
                   <Award size={14} /> Leaderboard
                 </Link>
                 <Link 
+                  to="/multiplayer" 
+                  className={cn(
+                    "text-sm font-bold uppercase tracking-widest transition-colors flex items-center gap-1.5 px-3 py-1 bg-indigo-500/10 rounded-lg border border-indigo-500/20",
+                    location.pathname === '/multiplayer' ? "text-indigo-400 border-indigo-400" : "text-slate-400 hover:text-slate-200"
+                  )}
+                >
+                  <Users size={14} /> Play with Friends
+                </Link>
+                <Link 
                   to="/bookmarks" 
                   className={cn(
                     "text-sm font-bold uppercase tracking-widest transition-colors flex items-center gap-1.5",
@@ -1502,6 +1513,7 @@ const AppContent: React.FC = () => {
             ) : currentUser ? (
               <>
                 {!currentUser.isAdmin && <button onClick={() => { navigate('/dashboard'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2">Dashboard</button>}
+                {!currentUser.isAdmin && <button onClick={() => { navigate('/multiplayer'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2 text-indigo-400">Multiplayer</button>}
                 {currentUser.isAdmin && <button onClick={() => { navigate('/admin'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2 text-purple-400">Admin Panel</button>}
                 {!currentUser.isAdmin && <button onClick={() => { navigate('/profile'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2">Profile</button>}
                 <button onClick={() => { navigate('/contact'); setIsMobileMenuOpen(false); }} className="text-left font-bold py-2">Contact Us</button>
@@ -2194,6 +2206,16 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
 
             <div className="flex flex-col sm:flex-row gap-5 pt-4">
               <button 
+                onClick={() => navigate('/multiplayer')}
+                className="w-full py-5 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 hover:from-indigo-500/20 hover:to-purple-500/20 rounded-2xl font-black text-white border border-indigo-500/20 shadow-2xl shadow-indigo-500/10 flex items-center justify-center gap-3 transition-all active:scale-95 group mb-4"
+              >
+                <Users size={24} className="group-hover:rotate-12 transition-transform" /> 
+                <span className="text-lg">Test With <span className="gradient-text">Friends</span> 🔥</span>
+              </button>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-5 pt-4">
+              <button 
                 disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && (currentUser.trialsUsed || 0) >= 2) || (currentUser?.subscription === SubscriptionStatus.PENDING)}
                 onClick={() => startTest(topic, false, testLanguage, testDifficulty)}
                 className="flex-1 py-5 glass hover:bg-white/10 rounded-2xl font-black text-slate-300 border border-white/10 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
@@ -2508,7 +2530,7 @@ const Payment: React.FC<PaymentProps> = ({ appConfig, isLoading, handleRazorpayP
         setSuccessMessage('Profile picture updated successfully!');
       } catch (err) {
         console.error("Error updating profile picture:", err);
-        setErrorMessage('Failed to update profile picture.');
+        setError('Failed to update profile picture.');
       }
     };
 
@@ -2517,7 +2539,7 @@ const Payment: React.FC<PaymentProps> = ({ appConfig, isLoading, handleRazorpayP
       if (!file) return;
 
       if (file.size > 1024 * 1024) {
-        setErrorMessage('Image size must be less than 1MB.');
+        setError('Image size must be less than 1MB.');
         return;
       }
 
@@ -2538,7 +2560,7 @@ const Payment: React.FC<PaymentProps> = ({ appConfig, isLoading, handleRazorpayP
         const avatarUrl = await generateAvatar(currentUser.fullName);
         await updateProfilePic(avatarUrl);
       } catch (err) {
-        setErrorMessage(err instanceof Error ? err.message : 'Failed to generate AI avatar.');
+        setError(err instanceof Error ? err.message : 'Failed to generate AI avatar.');
       } finally {
         setIsGenerating(false);
       }
@@ -3024,6 +3046,7 @@ const Payment: React.FC<PaymentProps> = ({ appConfig, isLoading, handleRazorpayP
                   leaderboard={leaderboard}
                   currentUser={currentUser}
                 /> : <Navigate to="/auth" />} />
+                <Route path="/multiplayer" element={currentUser ? <TestWithFriends currentUser={currentUser} /> : <Navigate to="/auth" />} />
                 <Route path="/bookmarks" element={currentUser ? <BookmarksPage 
                   bookmarks={bookmarks}
                   onRemove={toggleBookmark}
