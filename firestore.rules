@@ -45,8 +45,9 @@ service cloud.firestore {
              data.questions is string &&
              data.currentQuestionIndex is number &&
              data.timer is number &&
-             data.players is list && data.players.size() <= 20 &&
-             data.createdAt == request.time;
+             data.players is list && 
+             data.createdAt == request.time &&
+             data.settings.maxPlayers is number;
     }
 
     function isValidScore(data) {

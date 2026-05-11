@@ -83,6 +83,7 @@ export interface Room {
     difficulty: Difficulty;
     language: string;
     questionCount: number;
+    maxPlayers: number;
   };
 }
 

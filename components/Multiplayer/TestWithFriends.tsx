@@ -191,7 +191,8 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
           difficulty: settings.difficulty,
           language: settings.language,
           questionCount: settings.questionCount,
-          timePerQuestion: settings.timePerQuestion
+          timePerQuestion: settings.timePerQuestion,
+          maxPlayers: settings.maxPlayers
         }
       };
 
@@ -239,7 +240,8 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
       
       const roomData = roomSnap.data();
       if (roomData.status !== 'waiting') throw new Error("Room has already started.");
-      if (roomData.players.length >= 10) throw new Error("Room is full (max 10 players).");
+      const maxPlayers = roomData.settings?.maxPlayers || 10;
+      if (roomData.players.length >= maxPlayers) throw new Error(`Room is full (max ${maxPlayers} players).`);
       if (roomData.players.includes(currentUser.id)) {
          // Already in room, just set state
          setRoom({ ...roomData, questions: JSON.parse(roomData.questions), id: code.toUpperCase() } as Room);
@@ -421,7 +423,8 @@ const MultiplayerDashboard = ({ onJoin, onCreate, isLoading, error }: any) => {
     timePerQuestion: 30,
     difficulty: 'Medium' as Difficulty,
     language: 'English',
-    questionCount: 10
+    questionCount: 10,
+    maxPlayers: 5
   });
 
   return (
@@ -502,6 +505,22 @@ const MultiplayerDashboard = ({ onJoin, onCreate, isLoading, error }: any) => {
                      <option value={10}>10 Qs</option>
                      <option value={20}>20 Qs</option>
                      <option value={50}>50 Qs</option>
+                   </select>
+                </div>
+                <div className="space-y-1">
+                   <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest ml-2">Slot Limit</label>
+                   <select 
+                     value={settings.maxPlayers}
+                     onChange={e => setSettings({...settings, maxPlayers: Number(e.target.value)})}
+                     className="w-full p-3 bg-white/5 border border-white/10 rounded-xl font-bold text-sm"
+                   >
+                     <option value={2}>2 Players</option>
+                     <option value={3}>3 Players</option>
+                     <option value={4}>4 Players</option>
+                     <option value={5}>5 Players</option>
+                     <option value={8}>8 Players</option>
+                     <option value={10}>10 Players</option>
+                     <option value={20}>20 Players</option>
                    </select>
                 </div>
              </div>
