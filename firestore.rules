@@ -59,7 +59,7 @@ service cloud.firestore {
     }
 
     function isValidScore(data) {
-      return data.keys().hasAll(['id', 'roomId', 'playerId', 'playerName', 'score', 'answers', 'isReady', 'lastActive', 'isHost']) &&
+      return data.keys().hasAll(['id', 'roomId', 'playerId', 'playerName', 'photoURL', 'score', 'answers', 'isReady', 'lastActive', 'isHost']) &&
              data.playerId == request.auth.uid &&
              data.score is number &&
              data.answers is list &&
