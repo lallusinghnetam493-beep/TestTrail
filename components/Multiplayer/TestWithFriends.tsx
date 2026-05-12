@@ -204,8 +204,13 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
     setError(null);
     try {
       console.log("Creating room for topic:", topic);
+      // Status update for UI
+      setError("Generating questions with AI..."); 
       const questions = await generateQuestions(topic, settings.questionCount, settings.language, settings.difficulty);
+      setError(null); // Clear the message
+      
       const newRoomId = generateRoomId();
+      console.log("Questions generated, Room ID:", newRoomId);
       
       const roomData = {
         id: newRoomId,
@@ -229,28 +234,39 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
         }
       };
 
-      await setDoc(doc(db, 'rooms', newRoomId), roomData);
-      console.log("Room doc created:", newRoomId);
+      try {
+        await setDoc(doc(db, 'rooms', newRoomId), roomData);
+        console.log("Room doc created successfully");
+      } catch (err) {
+        handleFirestoreError(err, OperationType.CREATE, `rooms/${newRoomId}`);
+      }
 
       // Create host's score entry
       const scoreId = `${newRoomId}_${currentUser.id}`;
-      await setDoc(doc(db, 'scores', scoreId), {
-        id: scoreId,
-        roomId: newRoomId,
-        playerId: currentUser.id,
-        playerName: currentUser.fullName,
-        photoURL: currentUser.photoURL || null,
-        score: 0,
-        answers: new Array(questions.length).fill(null),
-        isReady: true,
-        lastActive: serverTimestamp(),
-        isHost: true
-      });
+      try {
+        await setDoc(doc(db, 'scores', scoreId), {
+          id: scoreId,
+          roomId: newRoomId,
+          playerId: currentUser.id,
+          playerName: currentUser.fullName,
+          photoURL: currentUser.photoURL || null,
+          score: 0,
+          answers: new Array(questions.length).fill(null),
+          isReady: true,
+          lastActive: serverTimestamp(),
+          isHost: true
+        });
+        console.log("Host score entry created successfully");
+      } catch (err) {
+        handleFirestoreError(err, OperationType.CREATE, `scores/${scoreId}`);
+      }
 
-      // Rely on onSnapshot to set the room state
+      setRoom({ ...roomData, questions, id: newRoomId } as Room);
+      setCurrentAnswers(new Array(questions.length).fill(null));
     } catch (err: any) {
       console.error("Create room error:", err);
-      setError(err.message);
+      setError(err.message || "Failed to create room.");
+    } finally {
       setIsLoading(false);
     }
   };
@@ -273,29 +289,39 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
       const questions = typeof roomData.questions === 'string' ? JSON.parse(roomData.questions) : roomData.questions;
 
       if (!roomData.players.includes(currentUser.id)) {
-        await updateDoc(doc(db, 'rooms', upperCode), {
-          players: arrayUnion(currentUser.id)
-        });
+        try {
+          await updateDoc(doc(db, 'rooms', upperCode), {
+            players: arrayUnion(currentUser.id)
+          });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.UPDATE, `rooms/${upperCode}`);
+        }
       }
 
       const scoreId = `${upperCode}_${currentUser.id}`;
-      await setDoc(doc(db, 'scores', scoreId), {
-        id: scoreId,
-        roomId: upperCode,
-        playerId: currentUser.id,
-        playerName: currentUser.fullName,
-        photoURL: currentUser.photoURL || null,
-        score: 0,
-        answers: new Array(questions.length).fill(null),
-        isReady: true,
-        lastActive: serverTimestamp(),
-        isHost: false
-      });
+      try {
+        await setDoc(doc(db, 'scores', scoreId), {
+          id: scoreId,
+          roomId: upperCode,
+          playerId: currentUser.id,
+          playerName: currentUser.fullName,
+          photoURL: currentUser.photoURL || null,
+          score: 0,
+          answers: new Array(questions.length).fill(null),
+          isReady: true,
+          lastActive: serverTimestamp(),
+          isHost: false
+        });
+      } catch (err) {
+        handleFirestoreError(err, OperationType.CREATE, `scores/${scoreId}`);
+      }
 
-      // Rely on onSnapshot to set the room state
+      setRoom({ ...roomData, id: upperCode, questions } as Room);
+      setCurrentAnswers(new Array(questions.length).fill(null));
     } catch (err: any) {
       console.error("Join room error:", err);
-      setError(err.message);
+      setError(err.message || "Failed to join room.");
+    } finally {
       setIsLoading(false);
     }
   };

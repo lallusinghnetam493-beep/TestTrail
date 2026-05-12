@@ -77,6 +77,7 @@ export interface Room {
   currentQuestion?: Question;
   currentQuestionIndex: number;
   timer: number;
+  gameStarted: boolean;
   players: string[]; // List of UIDs
   createdAt: any;
   settings: {
