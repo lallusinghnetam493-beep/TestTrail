@@ -128,10 +128,14 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
   useEffect(() => {
     if (!room?.id) return;
 
+    console.log("Setting up room listeners for:", room.id);
+
     // Sync room state
     const unsubRoom = onSnapshot(doc(db, 'rooms', room.id), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data() as any;
+        console.log("Room Snapshot Update:", data.status, "gameStarted:", data.gameStarted);
+
         let parsedQuestions: Question[] = [];
         try {
           parsedQuestions = typeof data.questions === 'string' ? JSON.parse(data.questions) : data.questions;
@@ -139,40 +143,59 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
           console.error("Failed to parse questions", e);
         }
 
-        setRoom({
-          ...data,
-          questions: parsedQuestions
+        setRoom(prev => {
+          // Deep compare or just merge carefully to avoid losing questions array if snapshot is partial (though it shouldn't be)
+          return {
+            ...data,
+            id: docSnap.id,
+            questions: parsedQuestions || prev?.questions || []
+          };
         });
         setTimeLeft(data.timer);
       } else {
+        console.log("Room deleted or doesn't exist");
         setRoom(null);
         setError("Room was closed by host.");
       }
+    }, (err) => {
+      console.error("Room Snapshot Error:", err);
+      handleFirestoreError(err, OperationType.GET, `rooms/${room.id}`);
     });
 
     // Sync scores
     const qScores = query(collection(db, 'scores'), where('roomId', '==', room.id));
     const unsubScores = onSnapshot(qScores, (snapshot) => {
       const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as RoomScore[];
+      console.log("Scores Snapshot Update:", data.length, "players");
       setScores(data.sort((a, b) => b.score - a.score));
+    }, (err) => {
+      console.error("Scores Snapshot Error:", err);
     });
 
-    // Heartbeat to keep player active
+    return () => {
+      console.log("Cleaning up room listeners for:", room.id);
+      unsubRoom();
+      unsubScores();
+    };
+  }, [room?.id]); // Only depend on ID to prevent recreation loops
+
+  // Heartbeat separately
+  useEffect(() => {
+    if (!currentUser || !room?.id) return;
+
     const heartbeat = setInterval(async () => {
-      if (currentUser && room?.id) {
+      try {
         const scoreId = `${room.id}_${currentUser.id}`;
         await updateDoc(doc(db, 'scores', scoreId), {
           lastActive: serverTimestamp()
         });
+      } catch (err) {
+        console.warn("Heartbeat failed:", err);
       }
     }, 10000);
 
-    return () => {
-      unsubRoom();
-      unsubScores();
-      clearInterval(heartbeat);
-    };
-  }, [room?.id, currentUser?.id]);
+    return () => clearInterval(heartbeat);
+  }, [currentUser?.id, room?.id]);
 
   // --- Actions ---
   const handleCreateRoom = async (topic: string, settings: any) => {
@@ -180,15 +203,16 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
     setIsLoading(true);
     setError(null);
     try {
-      const newRoomId = generateRoomId();
+      console.log("Creating room for topic:", topic);
       const questions = await generateQuestions(topic, settings.questionCount, settings.language, settings.difficulty);
+      const newRoomId = generateRoomId();
       
       const roomData = {
         id: newRoomId,
         hostId: currentUser.id,
         status: 'waiting',
         topic,
-        questions, // Save as real array
+        questions, 
         currentQuestion: null,
         currentQuestionIndex: 0,
         gameStarted: false,
@@ -205,36 +229,28 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
         }
       };
 
-      try {
-        await setDoc(doc(db, 'rooms', newRoomId), roomData);
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, `rooms/${newRoomId}`);
-      }
+      await setDoc(doc(db, 'rooms', newRoomId), roomData);
+      console.log("Room doc created:", newRoomId);
 
       // Create host's score entry
       const scoreId = `${newRoomId}_${currentUser.id}`;
-      try {
-        await setDoc(doc(db, 'scores', scoreId), {
-          id: scoreId,
-          roomId: newRoomId,
-          playerId: currentUser.id,
-          playerName: currentUser.fullName,
-          photoURL: currentUser.photoURL || null,
-          score: 0,
-          answers: new Array(questions.length).fill(null),
-          isReady: true,
-          lastActive: serverTimestamp(),
-          isHost: true
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, `scores/${scoreId}`);
-      }
+      await setDoc(doc(db, 'scores', scoreId), {
+        id: scoreId,
+        roomId: newRoomId,
+        playerId: currentUser.id,
+        playerName: currentUser.fullName,
+        photoURL: currentUser.photoURL || null,
+        score: 0,
+        answers: new Array(questions.length).fill(null),
+        isReady: true,
+        lastActive: serverTimestamp(),
+        isHost: true
+      });
 
-      setRoom({ ...roomData, questions, id: newRoomId } as Room);
-      setCurrentAnswers(new Array(questions.length).fill(null));
+      // Rely on onSnapshot to set the room state
     } catch (err: any) {
+      console.error("Create room error:", err);
       setError(err.message);
-    } finally {
       setIsLoading(false);
     }
   };
@@ -243,8 +259,10 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
     if (!currentUser) return;
     setIsLoading(true);
     setError(null);
+    const upperCode = code.toUpperCase();
     try {
-      const roomSnap = await getDoc(doc(db, 'rooms', code.toUpperCase()));
+      console.log("Joining room:", upperCode);
+      const roomSnap = await getDoc(doc(db, 'rooms', upperCode));
       if (!roomSnap.exists()) throw new Error("Invalid room code.");
       
       const roomData = roomSnap.data();
@@ -254,40 +272,30 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
       
       const questions = typeof roomData.questions === 'string' ? JSON.parse(roomData.questions) : roomData.questions;
 
-      if (roomData.players.includes(currentUser.id)) {
-         // Already in room, just set state
-         setRoom({ ...roomData, questions, id: code.toUpperCase() } as Room);
-         return;
+      if (!roomData.players.includes(currentUser.id)) {
+        await updateDoc(doc(db, 'rooms', upperCode), {
+          players: arrayUnion(currentUser.id)
+        });
       }
 
-      const roomRef = doc(db, 'rooms', code.toUpperCase());
-      await updateDoc(roomRef, {
-        players: arrayUnion(currentUser.id)
+      const scoreId = `${upperCode}_${currentUser.id}`;
+      await setDoc(doc(db, 'scores', scoreId), {
+        id: scoreId,
+        roomId: upperCode,
+        playerId: currentUser.id,
+        playerName: currentUser.fullName,
+        photoURL: currentUser.photoURL || null,
+        score: 0,
+        answers: new Array(questions.length).fill(null),
+        isReady: true,
+        lastActive: serverTimestamp(),
+        isHost: false
       });
 
-      const scoreId = `${code.toUpperCase()}_${currentUser.id}`;
-      try {
-        await setDoc(doc(db, 'scores', scoreId), {
-          id: scoreId,
-          roomId: code.toUpperCase(),
-          playerId: currentUser.id,
-          playerName: currentUser.fullName,
-          photoURL: currentUser.photoURL || null,
-          score: 0,
-          answers: new Array(questions.length).fill(null),
-          isReady: true,
-          lastActive: serverTimestamp(),
-          isHost: false
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, `scores/${scoreId}`);
-      }
-
-      setRoom({ ...roomData, questions, id: code.toUpperCase() } as Room);
-      setCurrentAnswers(new Array(questions.length).fill(null));
+      // Rely on onSnapshot to set the room state
     } catch (err: any) {
+      console.error("Join room error:", err);
       setError(err.message);
-    } finally {
       setIsLoading(false);
     }
   };
@@ -295,68 +303,91 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
   const handleStartTest = async () => {
     if (!room || room.hostId !== currentUser?.id) return;
     
-    // Safety check
+    console.log("Starting test for room:", room.id);
     if (!room.questions || room.questions.length === 0) {
       setError("Questions not loaded. Please wait.");
       return;
     }
 
-    await updateDoc(doc(db, 'rooms', room.id), {
-      status: 'playing',
-      gameStarted: true,
-      currentQuestionIndex: 0,
-      currentQuestion: room.questions[0],
-      timer: room.settings.timePerQuestion
-    });
+    try {
+      const firstQuestion = room.questions[0];
+      await updateDoc(doc(db, 'rooms', room.id), {
+        status: 'playing',
+        gameStarted: true,
+        currentQuestionIndex: 0,
+        currentQuestion: firstQuestion,
+        timer: room.settings.timePerQuestion
+      });
+      console.log("Room updated to status: playing with first question");
+    } catch (err) {
+      console.error("Start test error:", err);
+      setError("Failed to start test. Check permissions.");
+    }
   };
 
   const handleKickPlayer = async (playerId: string) => {
     if (!room || room.hostId !== currentUser?.id) return;
-    await updateDoc(doc(db, 'rooms', room.id), {
-      players: arrayRemove(playerId)
-    });
-    await deleteDoc(doc(db, 'scores', `${room.id}_${playerId}`));
+    try {
+      await updateDoc(doc(db, 'rooms', room.id), {
+        players: arrayRemove(playerId)
+      });
+      await deleteDoc(doc(db, 'scores', `${room.id}_${playerId}`));
+    } catch (err) {
+      console.error("Kick player error:", err);
+    }
   };
 
   const handleEndRoom = async () => {
     if (!room || room.hostId !== currentUser?.id) return;
-    const batch = writeBatch(db);
-    batch.delete(doc(db, 'rooms', room.id));
-    scores.forEach(s => {
-      batch.delete(doc(db, 'scores', `${room.id}_${s.playerId}`));
-    });
-    await batch.commit();
-    setRoom(null);
+    try {
+      const batch = writeBatch(db);
+      batch.delete(doc(db, 'rooms', room.id));
+      scores.forEach(s => {
+        batch.delete(doc(db, 'scores', `${room.id}_${s.playerId}`));
+      });
+      await batch.commit();
+      setRoom(null);
+    } catch (err) {
+      console.error("End room error:", err);
+    }
   };
 
   const handleAnswer = async (questionIndex: number, answerIndex: number) => {
     if (!room || !currentUser || room.status !== 'playing') return;
     
-    const isCorrect = room.questions[questionIndex].correctAnswerIndex === answerIndex;
-    const newAnswers = [...currentAnswers];
-    newAnswers[questionIndex] = answerIndex;
-    setCurrentAnswers(newAnswers);
+    try {
+      const isCorrect = room.questions[questionIndex].correctAnswerIndex === answerIndex;
+      const newAnswers = [...currentAnswers];
+      newAnswers[questionIndex] = answerIndex;
+      setCurrentAnswers(newAnswers);
 
-    const scoreId = `${room.id}_${currentUser.id}`;
-    const currentScoreDoc = await getDoc(doc(db, 'scores', scoreId));
-    const currentScore = currentScoreDoc.data()?.score || 0;
+      const scoreId = `${room.id}_${currentUser.id}`;
+      const currentScoreDoc = await getDoc(doc(db, 'scores', scoreId));
+      const currentScore = currentScoreDoc.data()?.score || 0;
 
-    await updateDoc(doc(db, 'scores', scoreId), {
-      score: isCorrect ? currentScore + 10 : currentScore,
-      answers: newAnswers
-    });
+      await updateDoc(doc(db, 'scores', scoreId), {
+        score: isCorrect ? currentScore + 10 : currentScore,
+        answers: newAnswers
+      });
+    } catch (err) {
+      console.error("Handle answer error:", err);
+    }
   };
 
   const handleLeave = async () => {
     if (!room || !currentUser) return;
-    if (room.hostId === currentUser.id) {
-      await handleEndRoom();
-    } else {
-      await updateDoc(doc(db, 'rooms', room.id), {
-        players: arrayRemove(currentUser.id)
-      });
-      await deleteDoc(doc(db, 'scores', `${room.id}_${currentUser.id}`));
-      setRoom(null);
+    try {
+      if (room.hostId === currentUser.id) {
+        await handleEndRoom();
+      } else {
+        await updateDoc(doc(db, 'rooms', room.id), {
+          players: arrayRemove(currentUser.id)
+        });
+        await deleteDoc(doc(db, 'scores', `${room.id}_${currentUser.id}`));
+        setRoom(null);
+      }
+    } catch (err) {
+      console.error("Leave room error:", err);
     }
   };
 
@@ -364,7 +395,8 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
   useEffect(() => {
     if (!room || room.status !== 'playing' || room.hostId !== currentUser?.id) return;
 
-    // Use a ref to prevent race conditions with multiple intervals
+    console.log("Timer Effect Running. Current Timer:", room.timer);
+
     const interval = setInterval(async () => {
       const roomRef = doc(db, 'rooms', room.id);
       
@@ -374,14 +406,17 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
         });
       } else {
         // Time's up for current question
+        console.log("Time up for question", room.currentQuestionIndex);
         const nextIndex = room.currentQuestionIndex + 1;
         if (nextIndex < room.questions.length) {
+          console.log("Moving to next question:", nextIndex);
           await updateDoc(roomRef, {
             currentQuestionIndex: nextIndex,
             currentQuestion: room.questions[nextIndex],
             timer: room.settings.timePerQuestion
           });
         } else {
+          console.log("All questions finished");
           await updateDoc(roomRef, {
             status: 'finished',
             gameStarted: false
@@ -391,7 +426,8 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [room?.status, room?.timer, room?.currentQuestionIndex, room?.hostId, currentUser?.id, room?.id, room?.questions]);
+  }, [room?.status, room?.timer, room?.currentQuestionIndex, room?.hostId, room?.id, room?.questions]);
+
 
   // --- UI Screens ---
   if (!room) {
@@ -718,11 +754,23 @@ const MultiplayerQuiz = ({ room, scores, currentUser, timeLeft, currentAnswers, 
   const currentQ = room.currentQuestion || (room.questions && room.questions[room.currentQuestionIndex]);
   const selectedIdx = currentAnswers[room.currentQuestionIndex];
 
+  useEffect(() => {
+    console.log("MultiplayerQuiz Rendered. Current Q Index:", room.currentQuestionIndex, "Has currentQ:", !!currentQ);
+  }, [room.currentQuestionIndex, !!currentQ]);
+
   if (!currentQ) {
+    console.warn("No current question found. Room state:", {
+      gameStarted: room.gameStarted,
+      status: room.status,
+      index: room.currentQuestionIndex,
+      hasQuestions: !!room.questions,
+      questionsLen: room.questions?.length
+    });
     return (
       <div className="flex flex-col items-center justify-center min-h-screen text-white space-y-4">
         <Loader2 className="w-12 h-12 text-indigo-500 animate-spin" />
-        <p className="font-bold text-xl">Loading question...</p>
+        <p className="font-bold text-xl">Waiting for question synchronization...</p>
+        <p className="text-sm text-slate-500">Host is preparing the next question.</p>
       </div>
     );
   }

@@ -46,9 +46,16 @@ service cloud.firestore {
              data.currentQuestionIndex is number &&
              data.timer is number &&
              data.players is list && 
-             data.createdAt == request.time &&
              data.settings.maxPlayers is number &&
              data.gameStarted is bool;
+    }
+
+    function isValidRoomCreate(data) {
+       return isValidRoom(data) && data.createdAt == request.time;
+    }
+
+    function isValidRoomUpdate(data) {
+       return isValidRoom(data) && data.createdAt == resource.data.createdAt;
     }
 
     function isValidScore(data) {
@@ -99,9 +106,9 @@ service cloud.firestore {
 
     match /rooms/{roomId} {
       allow read: if isAuthenticated();
-      allow create: if isAuthenticated() && isValidRoom(incoming()) && isValidId(roomId);
+      allow create: if isAuthenticated() && isValidRoomCreate(incoming()) && isValidId(roomId);
       allow update: if isAuthenticated() && (
-        (request.auth.uid == resource.data.hostId && isValidRoom(incoming())) || 
+        (request.auth.uid == resource.data.hostId && isValidRoomUpdate(incoming())) || 
         (incoming().diff(existing()).affectedKeys().hasOnly(['players']) && incoming().players.size() <= 20)
       );
       allow delete: if isAuthenticated() && request.auth.uid == resource.data.hostId;
