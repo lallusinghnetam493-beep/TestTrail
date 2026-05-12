@@ -483,22 +483,19 @@ const MultiplayerDashboard = ({ onJoin, onCreate, isLoading, error }: any) => {
                className="w-full p-4 bg-white/5 border border-white/10 rounded-2xl font-bold focus:border-purple-500 transition-all"
              />
              
-             <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                   <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest ml-2">Time/Question</label>
-                   <select 
-                     value={settings.timePerQuestion}
-                     onChange={e => setSettings({...settings, timePerQuestion: Number(e.target.value)})}
-                     className="w-full p-3 bg-white/5 border border-white/10 rounded-xl font-bold text-sm"
-                   >
-                     <option value={30}>30 Secs</option>
-                     <option value={60}>1 Min</option>
-                     <option value={120}>2 Mins</option>
-                     <option value={180}>3 Mins</option>
-                     <option value={300}>5 Mins</option>
-                   </select>
-                </div>
-                <div className="space-y-1">
+              <div className="grid grid-cols-2 gap-4">
+                 <div className="space-y-1">
+                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest ml-2">Language</label>
+                    <select 
+                      value={settings.language}
+                      onChange={e => setSettings({...settings, language: e.target.value})}
+                      className="w-full p-3 bg-white/5 border border-white/10 rounded-xl font-bold text-sm"
+                    >
+                      <option value="English">English</option>
+                      <option value="Hindi">Hindi</option>
+                    </select>
+                 </div>
+                 <div className="space-y-1">
                    <label className="text-[10px] font-black uppercase text-slate-500 tracking-widest ml-2">Questions</label>
                    <select 
                      value={settings.questionCount}
