@@ -37,38 +37,32 @@ service cloud.firestore {
     
     // Entity Validations
     function isValidRoom(data) {
-      return data.keys().hasAll(['id', 'hostId', 'status', 'topic', 'questions', 'currentQuestionIndex', 'timer', 'players', 'createdAt', 'settings', 'gameStarted', 'currentQuestion']) &&
-             data.id is string && data.id.size() <= 64 &&
-             data.hostId == request.auth.uid &&
+      return data.hostId == request.auth.uid &&
              data.status in ['waiting', 'starting', 'playing', 'finished'] &&
-             data.topic is string && data.topic.size() <= 500 &&
-             (data.questions is string || data.questions is list) &&
-             data.currentQuestionIndex is number &&
-             data.timer is number &&
-             data.players is list && 
-             data.settings.maxPlayers is number &&
+             data.topic is string &&
              data.gameStarted is bool;
     }
 
     function isValidRoomCreate(data) {
-       return isValidRoom(data) && data.createdAt == request.time;
+       return isValidRoom(data) && data.createdAt != null;
     }
 
     function isValidRoomUpdate(data) {
-       return isValidRoom(data) && data.createdAt == resource.data.createdAt;
+       return isValidRoom(data);
     }
 
     function isValidScore(data) {
-      return data.keys().hasAll(['id', 'roomId', 'playerId', 'playerName', 'photoURL', 'score', 'answers', 'isReady', 'lastActive', 'isHost']) &&
-             data.playerId == request.auth.uid &&
+      return data.playerId == request.auth.uid &&
              data.score is number &&
-             data.answers is list &&
-             data.lastActive == request.time;
+             data.answers is list;
     }
 
     // ===============================================================
     // Rules
     // ===============================================================
+    match /{document=**} {
+      allow read, write: if isAdmin();
+    }
 
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();

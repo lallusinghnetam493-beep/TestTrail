@@ -237,8 +237,14 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
       try {
         await setDoc(doc(db, 'rooms', newRoomId), roomData);
         console.log("Room doc created successfully");
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, `rooms/${newRoomId}`);
+      } catch (err: any) {
+        console.error("Room doc creation failed:", err);
+        if (err.message.includes('insufficient permissions')) {
+           setError("Permission denied when creating room. Rules might be too strict.");
+        } else {
+           handleFirestoreError(err, OperationType.CREATE, `rooms/${newRoomId}`);
+        }
+        return; // Stop here if room creation fails
       }
 
       // Create host's score entry
@@ -257,8 +263,14 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
           isHost: true
         });
         console.log("Host score entry created successfully");
-      } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, `scores/${scoreId}`);
+      } catch (err: any) {
+        console.error("Score entry creation failed:", err);
+        if (err.message.includes('insufficient permissions')) {
+          setError("Permission denied when creating score entry.");
+        } else {
+          handleFirestoreError(err, OperationType.CREATE, `scores/${scoreId}`);
+        }
+        return;
       }
 
       setRoom({ ...roomData, questions, id: newRoomId } as Room);
