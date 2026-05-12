@@ -433,18 +433,21 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
   useEffect(() => {
     if (!room || room.status !== 'playing' || room.hostId !== currentUser?.id) return;
 
-    console.log("Timer Effect Running. Current Timer:", room.timer);
-
     const interval = setInterval(async () => {
       const roomRef = doc(db, 'rooms', room.id);
       
-      if (room.timer > 0) {
+      // Check if everyone has answered the current question
+      const currentIdx = room.currentQuestionIndex;
+      const roomScores = scores.filter(s => room.players.includes(s.playerId));
+      const everyoneAnswered = roomScores.length > 0 && roomScores.every(s => s.answers[currentIdx] !== null);
+
+      if (room.timer > 0 && !everyoneAnswered) {
         await updateDoc(roomRef, {
           timer: room.timer - 1
         });
       } else {
-        // Time's up for current question
-        console.log("Time up for question", room.currentQuestionIndex);
+        // Time's up or everyone answered
+        console.log(everyoneAnswered ? "Everyone answered!" : "Time up!", "for question", room.currentQuestionIndex);
         const nextIndex = room.currentQuestionIndex + 1;
         if (nextIndex < room.questions.length) {
           console.log("Moving to next question:", nextIndex);
@@ -464,7 +467,7 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [room?.status, room?.timer, room?.currentQuestionIndex, room?.hostId, room?.id, room?.questions]);
+  }, [room?.status, room?.timer, room?.currentQuestionIndex, room?.hostId, room?.id, room?.questions, room?.players, scores]);
 
 
   // --- UI Screens ---
