@@ -74,6 +74,7 @@ export interface Room {
   status: RoomStatus;
   topic: string;
   questions: Question[];
+  currentQuestion?: Question;
   currentQuestionIndex: number;
   timer: number;
   players: string[]; // List of UIDs

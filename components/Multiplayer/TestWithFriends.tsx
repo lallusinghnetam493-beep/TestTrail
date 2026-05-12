@@ -132,9 +132,16 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
     const unsubRoom = onSnapshot(doc(db, 'rooms', room.id), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data() as any;
+        let parsedQuestions: Question[] = [];
+        try {
+          parsedQuestions = typeof data.questions === 'string' ? JSON.parse(data.questions) : data.questions;
+        } catch (e) {
+          console.error("Failed to parse questions", e);
+        }
+
         setRoom({
           ...data,
-          questions: data.questions ? JSON.parse(data.questions) : []
+          questions: parsedQuestions
         });
         setTimeLeft(data.timer);
       } else {
@@ -181,8 +188,10 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
         hostId: currentUser.id,
         status: 'waiting',
         topic,
-        questions: JSON.stringify(questions),
+        questions, // Save as real array
+        currentQuestion: null,
         currentQuestionIndex: 0,
+        gameStarted: false,
         timer: settings.timePerQuestion,
         players: [currentUser.id],
         createdAt: serverTimestamp(),
@@ -242,9 +251,12 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
       if (roomData.status !== 'waiting') throw new Error("Room has already started.");
       const maxPlayers = roomData.settings?.maxPlayers || 10;
       if (roomData.players.length >= maxPlayers) throw new Error(`Room is full (max ${maxPlayers} players).`);
+      
+      const questions = typeof roomData.questions === 'string' ? JSON.parse(roomData.questions) : roomData.questions;
+
       if (roomData.players.includes(currentUser.id)) {
          // Already in room, just set state
-         setRoom({ ...roomData, questions: JSON.parse(roomData.questions), id: code.toUpperCase() } as Room);
+         setRoom({ ...roomData, questions, id: code.toUpperCase() } as Room);
          return;
       }
 
@@ -253,7 +265,6 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
         players: arrayUnion(currentUser.id)
       });
 
-      const questions = JSON.parse(roomData.questions);
       const scoreId = `${code.toUpperCase()}_${currentUser.id}`;
       try {
         await setDoc(doc(db, 'scores', scoreId), {
@@ -283,9 +294,18 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
 
   const handleStartTest = async () => {
     if (!room || room.hostId !== currentUser?.id) return;
+    
+    // Safety check
+    if (!room.questions || room.questions.length === 0) {
+      setError("Questions not loaded. Please wait.");
+      return;
+    }
+
     await updateDoc(doc(db, 'rooms', room.id), {
       status: 'playing',
+      gameStarted: true,
       currentQuestionIndex: 0,
+      currentQuestion: room.questions[0],
       timer: room.settings.timePerQuestion
     });
   };
@@ -344,28 +364,34 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
   useEffect(() => {
     if (!room || room.status !== 'playing' || room.hostId !== currentUser?.id) return;
 
+    // Use a ref to prevent race conditions with multiple intervals
     const interval = setInterval(async () => {
+      const roomRef = doc(db, 'rooms', room.id);
+      
       if (room.timer > 0) {
-        await updateDoc(doc(db, 'rooms', room.id), {
+        await updateDoc(roomRef, {
           timer: room.timer - 1
         });
       } else {
         // Time's up for current question
-        if (room.currentQuestionIndex < room.questions.length - 1) {
-          await updateDoc(doc(db, 'rooms', room.id), {
-            currentQuestionIndex: room.currentQuestionIndex + 1,
+        const nextIndex = room.currentQuestionIndex + 1;
+        if (nextIndex < room.questions.length) {
+          await updateDoc(roomRef, {
+            currentQuestionIndex: nextIndex,
+            currentQuestion: room.questions[nextIndex],
             timer: room.settings.timePerQuestion
           });
         } else {
-          await updateDoc(doc(db, 'rooms', room.id), {
-            status: 'finished'
+          await updateDoc(roomRef, {
+            status: 'finished',
+            gameStarted: false
           });
         }
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [room?.status, room?.timer, room?.currentQuestionIndex, room?.hostId, currentUser?.id]);
+  }, [room?.status, room?.timer, room?.currentQuestionIndex, room?.hostId, currentUser?.id, room?.id, room?.questions]);
 
   // --- UI Screens ---
   if (!room) {
@@ -689,7 +715,7 @@ const RoomLobby = ({ room, scores, currentUser, onStart, onKick, onLeave, onEnd 
 };
 
 const MultiplayerQuiz = ({ room, scores, currentUser, timeLeft, currentAnswers, onAnswer }: any) => {
-  const currentQ = room.questions && room.questions[room.currentQuestionIndex];
+  const currentQ = room.currentQuestion || (room.questions && room.questions[room.currentQuestionIndex]);
   const selectedIdx = currentAnswers[room.currentQuestionIndex];
 
   if (!currentQ) {
