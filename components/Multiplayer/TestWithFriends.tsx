@@ -946,9 +946,98 @@ const MultiplayerQuiz = ({ room, scores, currentUser, timeLeft, currentAnswers, 
 };
 
 const MultiplayerResults = ({ room, scores, currentUser, onLeave, onReplay }: any) => {
+  const [showReview, setShowReview] = useState(false);
   const winner = scores[0];
   const isWinner = winner?.playerId === currentUser?.id;
   const userScore = scores.find((s: any) => s.playerId === currentUser?.id);
+
+  if (showReview) {
+    return (
+      <div className="pt-32 pb-20 px-6 max-w-4xl mx-auto space-y-8">
+        <div className="flex items-center justify-between">
+           <button 
+             onClick={() => setShowReview(false)}
+             className="flex items-center gap-2 text-slate-400 hover:text-white font-bold transition-colors"
+           >
+             <ArrowRight className="rotate-180" size={20} /> Back to Results
+           </button>
+           <h2 className="text-2xl font-black text-white">Review Answers</h2>
+        </div>
+
+        <div className="space-y-6">
+          {room.questions.map((q: Question, qIdx: number) => {
+            const userAnswerIdx = userScore?.answers?.[qIdx];
+            const isCorrect = q.correctAnswerIndex === userAnswerIdx;
+
+            return (
+              <motion.div 
+                key={qIdx}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: qIdx * 0.05 }}
+                className="glass p-8 rounded-3xl border-white/5 space-y-4"
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-black uppercase text-indigo-400 tracking-widest">Question {qIdx + 1}</span>
+                    <h3 className="text-lg font-bold text-white">{q.text}</h3>
+                  </div>
+                  <div className={cn(
+                    "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border",
+                    isCorrect ? "bg-green-500/10 border-green-500/20 text-green-400" : "bg-red-500/10 border-red-500/20 text-red-400"
+                  )}>
+                    {isCorrect ? "Correct" : "Incorrect"}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {q.options.map((opt, oIdx) => {
+                    const isSelected = userAnswerIdx === oIdx;
+                    const isCorrectOpt = q.correctAnswerIndex === oIdx;
+
+                    return (
+                      <div 
+                        key={oIdx}
+                        className={cn(
+                          "p-4 rounded-xl border flex items-center justify-between gap-3 text-sm font-medium",
+                          isCorrectOpt ? "bg-green-500/10 border-green-500/30 text-green-400" :
+                          isSelected && !isCorrect ? "bg-red-500/10 border-red-500/30 text-red-400" :
+                          "bg-white/[0.02] border-white/5 text-slate-400"
+                        )}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="opacity-50">{String.fromCharCode(65 + oIdx)}.</span>
+                          <span>{opt}</span>
+                        </div>
+                        {isCorrectOpt && <CheckCircle2 size={16} />}
+                        {isSelected && !isCorrect && <XCircle size={16} />}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {q.explanation && (
+                  <div className="p-4 bg-indigo-500/5 rounded-2xl border border-indigo-500/10">
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      <span className="font-black text-indigo-400 uppercase tracking-widest mr-2">Explanation:</span>
+                      {q.explanation}
+                    </p>
+                  </div>
+                )}
+              </motion.div>
+            );
+          })}
+        </div>
+
+        <button 
+          onClick={onLeave}
+          className="w-full py-6 glass hover:bg-white/5 rounded-[2rem] font-black text-lg text-slate-400 flex items-center justify-center gap-4 transition-all"
+        >
+          <ArrowRight size={20} /> Exit to Dashboard
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="pt-32 pb-20 px-6 max-w-4xl mx-auto space-y-12">
@@ -1048,6 +1137,14 @@ const MultiplayerResults = ({ room, scores, currentUser, onLeave, onReplay }: an
                      />
                   </div>
                </div>
+
+               <button 
+                  onClick={() => setShowReview(true)}
+                  className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl font-bold text-white transition-all flex items-center justify-center gap-2"
+               >
+                  <History size={20} className="text-indigo-400" />
+                  Review Your Answers
+               </button>
             </div>
 
             <div className="flex flex-col gap-4">
