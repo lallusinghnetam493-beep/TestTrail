@@ -66,10 +66,12 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow read: if isOwner(userId) || isAdmin();
-      allow create: if isAuthenticated() && request.auth.uid == userId;
+      allow create: if (isAuthenticated() && request.auth.uid == userId) || 
+                      isAdmin() || 
+                      (request.resource.data.get('server_auth_secret', '') == "TT_SECRET_998877_APP_X_2024");
       allow update: if (
           isOwner(userId) && 
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fullName', 'password', 'trialsUsed', 'multiplayerTrialsUsed', 'sessionId', 'photoURL'])
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fullName', 'password', 'trialsUsed', 'multiplayerTrialsUsed', 'sessionId', 'photoURL', 'subscription', 'payment_id', 'updated_at', 'server_auth_secret'])
         ) || 
         isAdmin() ||
         (request.resource.data.get('server_auth_secret', '') == "TT_SECRET_998877_APP_X_2024") ||
