@@ -2549,6 +2549,19 @@ const Payment: React.FC<PaymentProps> = ({
             </div>
           </div>
 
+          {/* Mobile UPI Help Accordion / Tips */}
+          <div className="p-4 bg-white/[0.02] border border-white/10 rounded-2xl text-left space-y-2.5">
+            <div className="flex items-center gap-2 text-indigo-400 font-bold text-xs">
+              <Zap size={14} className="shrink-0" />
+              <span>Mobile पर PhonePe / UPI से पेमेंट कैसे करें?</span>
+            </div>
+            <ul className="text-[11px] text-slate-400 space-y-1.5 list-disc list-inside leading-relaxed">
+              <li><b>तरीका 1 (सबसे आसान):</b> 'Pay Now' दबाएं ➔ Razorpay में <b>UPI ID / VPA</b> चुनें ➔ अपनी PhonePe ID (उदा. <span className="font-mono text-slate-300">9876543210@ybl</span>) दर्ज करें ➔ PhonePe ऐप खोलकर रिक्वेस्ट Approve करें।</li>
+              <li><b>तरीका 2 (QR Code):</b> Razorpay स्क्रीन पर QR Code चुनें ➔ स्क्रीनशॉट लेकर PhonePe / GPay के 'Scan QR' (Gallery) से पे करें।</li>
+              <li><b>Note:</b> यदि PhonePe डायरेक्ट नहीं खुल रहा है, तो ऐप को Chrome / Safari ब्राउज़र में खोलें (iFrame / इन-ऐप ब्राउज़र में deep-linking ब्लॉक हो सकती है)।</li>
+            </ul>
+          </div>
+
           {/* Already Paid / Claim Pro Section */}
           <div className="pt-6 border-t border-white/10 space-y-4">
             <div className="flex items-center justify-between">
