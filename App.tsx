@@ -2488,8 +2488,8 @@ interface PaymentProps {
   isLoading: boolean;
   currentUser: User | null;
   handleRazorpayPayment: () => Promise<void>;
-  onUpdateUser: (user: User) => void;
-  showAlert: (title: string, message: string) => void;
+  onUpdateUser?: (user: User) => void;
+  showAlert?: (title: string, message: string) => void;
   navigate: any;
 }
 
@@ -2498,14 +2498,9 @@ const Payment: React.FC<PaymentProps> = ({
   isLoading, 
   currentUser,
   handleRazorpayPayment, 
-  onUpdateUser,
-  showAlert,
   navigate
 }) => {
   const [isInIframe, setIsInIframe] = useState(false);
-  const [claimPaymentId, setClaimPaymentId] = useState('');
-  const [isClaiming, setIsClaiming] = useState(false);
-  const [showClaimSection, setShowClaimSection] = useState(false);
 
   useEffect(() => {
     try {
@@ -2517,45 +2512,6 @@ const Payment: React.FC<PaymentProps> = ({
 
   const openInExternalBrowser = () => {
     window.open(window.location.href, '_blank');
-  };
-
-  const handleManualClaim = async () => {
-    if (!currentUser) return;
-    if (!claimPaymentId.trim()) {
-      showAlert("Missing ID", "कृपया अपना Payment ID (जैसे pay_xxxx) या Transaction UTR नंबर दर्ज करें।");
-      return;
-    }
-
-    setIsClaiming(true);
-    try {
-      const res = await fetch('/api/payment/claim', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          payment_id: claimPaymentId.trim(),
-          userId: currentUser.id
-        })
-      });
-
-      const data = await res.json();
-      if (data.status === 'success') {
-        const updatedUser: User = {
-          ...currentUser,
-          subscription: SubscriptionStatus.PRO,
-          payment_id: claimPaymentId.trim()
-        };
-        onUpdateUser(updatedUser);
-        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
-        showAlert("🎉 Payment Verified!", "बधाई हो! आपका Pro Subscription सफलतापूर्वक एक्टिवेट हो गया है।");
-        navigate('/dashboard');
-      } else {
-        showAlert("Verification Failed", data.message || "Payment ID verify नहीं हो सकी। कृपया सही Payment ID चेक करें।");
-      }
-    } catch (err: any) {
-      showAlert("Error", "वेरिफिकेशन में त्रुटि: " + err.message);
-    } finally {
-      setIsClaiming(false);
-    }
   };
 
   return (
@@ -2580,12 +2536,12 @@ const Payment: React.FC<PaymentProps> = ({
 
             <div className="pt-2">
               <button 
-                disabled={isLoading || isClaiming}
+                disabled={isLoading}
                 onClick={handleRazorpayPayment}
-                className="inline-flex items-center justify-center gap-3 w-full py-5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 text-white"
+                className="inline-flex items-center justify-center gap-3 w-full py-5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 text-white cursor-pointer"
               >
                 {isLoading ? <Loader2 className="animate-spin" /> : <Zap size={24} />}
-                {isLoading ? 'Processing...' : 'Pay Now with UPI / Card'}
+                {isLoading ? 'Connecting Gateway...' : 'Pay Now with PhonePe / UPI / Card'}
               </button>
             </div>
           </div>
@@ -2593,7 +2549,7 @@ const Payment: React.FC<PaymentProps> = ({
           {isInIframe && (
             <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-left space-y-2">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-bold text-amber-300">📱 Mobile App (PhonePe / GPay) Direct Open Mode</span>
+                <span className="text-xs font-bold text-amber-300">📱 Mobile PhonePe / UPI Direct Open</span>
                 <button
                   type="button"
                   onClick={openInExternalBrowser}
@@ -2603,78 +2559,29 @@ const Payment: React.FC<PaymentProps> = ({
                 </button>
               </div>
               <p className="text-[11px] text-slate-400">
-                यदि आप Preview में हैं, तो PhonePe / GPay ऐप को 1-Tap में खोलने के लिए ऊपर <b>'Open in Browser'</b> दबाएं।
+                PhonePe ऐप को 1-टैप में सीधे खोलने के लिए <b>'Open in Browser'</b> का उपयोग करें। पेमेंट पूरा होते ही आपका Pro अकाउंट अपने आप एक्टिवेट हो जाएगा!
               </p>
             </div>
           )}
 
-          {/* Mobile UPI Help Accordion / Tips */}
-          <div className="p-4 bg-white/[0.02] border border-white/10 rounded-2xl text-left space-y-2.5">
-            <div className="flex items-center gap-2 text-indigo-400 font-bold text-xs">
-              <Zap size={14} className="shrink-0" />
-              <span>Mobile पर PhonePe / UPI से पेमेंट कैसे करें?</span>
+          {/* Automatic Activation Notice */}
+          <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl text-left flex items-start gap-3">
+            <div className="w-7 h-7 bg-emerald-500/20 rounded-lg flex items-center justify-center text-emerald-400 shrink-0 mt-0.5">
+              <CheckCircle2 size={16} />
             </div>
-            <ul className="text-[11px] text-slate-400 space-y-1.5 list-disc list-inside leading-relaxed">
-              <li><b>तरीका 1 (सबसे आसान):</b> 'Pay Now' दबाएं ➔ Razorpay में <b>UPI ID / VPA</b> चुनें ➔ अपनी PhonePe ID (उदा. <span className="font-mono text-slate-300">9876543210@ybl</span>) दर्ज करें ➔ PhonePe ऐप खोलकर रिक्वेस्ट Approve करें।</li>
-              <li><b>तरीका 2 (QR Code):</b> Razorpay स्क्रीन पर QR Code चुनें ➔ स्क्रीनशॉट लेकर PhonePe / GPay के 'Scan QR' (Gallery) से पे करें।</li>
-              <li><b>Note:</b> यदि PhonePe डायरेक्ट नहीं खुल रहा है, तो ऐप को Chrome / Safari ब्राउज़र में खोलें (iFrame / इन-ऐप ब्राउज़र में deep-linking ब्लॉक हो सकती है)।</li>
-            </ul>
-          </div>
-
-          {/* Already Paid / Claim Pro Section */}
-          <div className="pt-6 border-t border-white/10 space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-slate-300">पैसे कट गए लेकिन Pro नहीं हुआ?</span>
-              <button 
-                type="button"
-                onClick={() => setShowClaimSection(!showClaimSection)}
-                className="text-xs font-black text-indigo-400 hover:text-indigo-300 underline underline-offset-4 transition-colors"
-              >
-                {showClaimSection ? "Hide" : "Claim Pro with Payment ID"}
-              </button>
+            <div className="space-y-1">
+              <h5 className="text-xs font-black text-emerald-300">ऑटोमैटिक प्रो एक्टिवेशन</h5>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                PhonePe, Google Pay या कार्ड से पेमेंट होते ही सिस्टम तुरंत आपके अकाउंट को <b>PRO</b> में अपग्रेड कर देगा। किसी मैनुअल प्रोसेस की आवश्यकता नहीं है।
+              </p>
             </div>
-
-            {showClaimSection && (
-              <motion.div 
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                className="p-5 bg-indigo-500/10 border border-indigo-500/30 rounded-2xl text-left space-y-4"
-              >
-                <div className="space-y-1">
-                  <h4 className="text-sm font-black text-white flex items-center gap-2">
-                    <ShieldCheck size={16} className="text-indigo-400" /> Verify & Restore Payment
-                  </h4>
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
-                    यदि आपके बैंक/UPI से पैसे कट गए हैं, तो अपने SMS, ईमेल या UPI रसीद से <b>Razorpay Payment ID (pay_xxxx)</b> या <b>UTR Number</b> दर्ज करें:
-                  </p>
-                </div>
-
-                <div className="space-y-3">
-                  <input 
-                    type="text" 
-                    value={claimPaymentId}
-                    onChange={(e) => setClaimPaymentId(e.target.value)}
-                    placeholder="उदा. pay_Pxyz123456 या UPI UTR"
-                    className="w-full px-4 py-3 bg-black/40 border border-white/15 rounded-xl font-mono text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500"
-                  />
-                  <button 
-                    disabled={isClaiming || !claimPaymentId.trim()}
-                    onClick={handleManualClaim}
-                    className="w-full py-3.5 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 rounded-xl font-black text-xs uppercase tracking-widest text-white shadow-lg shadow-indigo-500/20 transition-all flex items-center justify-center gap-2"
-                  >
-                    {isClaiming ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-                    {isClaiming ? 'Verifying...' : 'Verify & Activate Pro'}
-                  </button>
-                </div>
-              </motion.div>
-            )}
           </div>
 
           <div className="space-y-5 text-left border-t border-white/5 pt-6">
             <h4 className="text-lg font-black text-white">Pro Benefits:</h4>
             <ul className="space-y-3">
               {[
-                'Unlimited 100-Question Tests',
+                'Unlimited 100-Question Solo Tests',
                 'Unlimited Multiplayer Challenges With Friends',
                 'Advanced Performance Analytics & AI Recommendations',
                 'Priority Mock Test Generation',
@@ -2691,7 +2598,7 @@ const Payment: React.FC<PaymentProps> = ({
           </div>
 
           <div className="flex items-center justify-center gap-6 pt-2">
-             {['100% Secure', 'Instant Activation', '24/7 Support'].map(tag => (
+             {['100% Secure', 'Auto Instant Activation', '24/7 Support'].map(tag => (
                <div key={tag} className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-500">
                  <div className="w-1 h-1 bg-indigo-500 rounded-full"></div> {tag}
                </div>
