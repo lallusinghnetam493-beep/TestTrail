@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Users, 
@@ -24,7 +24,8 @@ import {
   TrendingUp,
   CheckCircle2,
   XCircle,
-  AlertCircle
+  AlertCircle,
+  Lock
 } from 'lucide-react';
 import { 
   doc, 
@@ -42,7 +43,7 @@ import {
   writeBatch
 } from 'firebase/firestore';
 import { auth, db } from '../../firebase';
-import { User, Room, RoomScore, Question, Difficulty } from '../../types';
+import { User, Room, RoomScore, Question, Difficulty, SubscriptionStatus } from '../../types';
 import { generateQuestions } from '../../services/geminiService';
 import { useNavigate } from 'react-router-dom';
 import { clsx, type ClassValue } from 'clsx';
@@ -51,6 +52,9 @@ import { twMerge } from 'tailwind-merge';
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
+
+const CURRENT_USER_KEY = 'tt_current_user';
+const MAX_FREE_MULTIPLAYER_TRIALS = 2;
 
 const generateRoomId = () => Math.random().toString(36).substring(2, 8).toUpperCase();
 
@@ -102,8 +106,57 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
   throw new Error(JSON.stringify(errInfo));
 }
 
-export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ currentUser }) => {
+export const TestWithFriends: React.FC<{ 
+  currentUser: User | null; 
+  onUpdateUser?: (updatedUser: User) => void;
+}> = ({ currentUser, onUpdateUser }) => {
   const navigate = useNavigate();
+
+  const isPro = currentUser?.subscription === SubscriptionStatus.PRO;
+  const usedTrials = currentUser?.multiplayerTrialsUsed || 0;
+  const hasExhaustedFreeTrials = !isPro && usedTrials >= MAX_FREE_MULTIPLAYER_TRIALS;
+
+  // Premium / PRO restriction check after 2 free trials
+  if (currentUser && hasExhaustedFreeTrials) {
+    return (
+      <div className="pt-32 pb-20 px-6 flex justify-center items-center min-h-[80vh]">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="w-full max-w-md text-center space-y-8 glass p-10 rounded-[3rem] border-indigo-500/20 shadow-2xl shadow-indigo-500/10 relative overflow-hidden"
+        >
+          <div className="w-20 h-20 bg-indigo-500/15 rounded-full flex items-center justify-center mx-auto text-indigo-400 border border-indigo-500/20 shadow-lg shadow-indigo-500/10">
+            <Lock size={36} />
+          </div>
+          <div className="space-y-3">
+            <h2 className="text-3xl font-black tracking-tight text-white">Free Trials Used</h2>
+            <div className="inline-block px-3 py-1 bg-indigo-500/20 text-indigo-400 border border-indigo-500/30 rounded-full text-[10px] font-black uppercase tracking-widest">
+              2 / 2 FREE TRIALS COMPLETED
+            </div>
+            <p className="text-slate-400 font-medium text-sm leading-relaxed pt-2">
+              आपने अपने <span className="text-indigo-400 font-bold">2 मुफ़्त 'Test with Friends'</span> ट्रायल्स पूरे कर लिए हैं। अपने दोस्तों के साथ अनलिमिटेड मल्टीप्लेयर मॉक टेस्ट खेलने के लिए PRO सब्सक्रिप्शन लें!
+            </p>
+          </div>
+          
+          <div className="space-y-4 pt-4">
+            <button 
+              onClick={() => navigate('/payment')}
+              className="w-full py-4 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-white shadow-xl shadow-indigo-500/30 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+            >
+              <Crown size={18} /> Buy Pro Subscription
+            </button>
+            <button 
+              onClick={() => navigate('/dashboard')}
+              className="w-full py-4 glass hover:bg-white/10 rounded-2xl font-bold text-slate-300 transition-all border border-white/10"
+            >
+              Back to Dashboard
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
   const [roomId, setRoomId] = useState('');
   const [room, setRoom] = useState<Room | null>(null);
   const [scores, setScores] = useState<RoomScore[]>([]);
@@ -112,6 +165,35 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
   const [copied, setCopied] = useState(false);
   const [currentAnswers, setCurrentAnswers] = useState<(number | null)[]>([]);
   const [timeLeft, setTimeLeft] = useState(0);
+
+  const trialDeductedRef = useRef<string | null>(null);
+
+  // Deduct 1 trial when game starts playing
+  useEffect(() => {
+    if (
+      room &&
+      room.status === 'playing' &&
+      currentUser &&
+      currentUser.subscription !== SubscriptionStatus.PRO &&
+      trialDeductedRef.current !== room.id
+    ) {
+      trialDeductedRef.current = room.id;
+      const currentTrials = currentUser.multiplayerTrialsUsed || 0;
+      const updatedTrials = currentTrials + 1;
+      const updatedUser: User = { ...currentUser, multiplayerTrialsUsed: updatedTrials };
+      
+      updateDoc(doc(db, 'users', currentUser.id), {
+        multiplayerTrialsUsed: updatedTrials
+      }).catch(err => {
+        console.warn("Failed to update multiplayerTrialsUsed in Firestore:", err);
+      });
+
+      localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
+      if (onUpdateUser) {
+        onUpdateUser(updatedUser);
+      }
+    }
+  }, [room?.status, room?.id, currentUser, onUpdateUser]);
 
   // --- Auto-join from URL ---
   useEffect(() => {
@@ -200,6 +282,12 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
   // --- Actions ---
   const handleCreateRoom = async (topic: string, settings: any) => {
     if (!currentUser) return;
+    
+    if (currentUser.subscription !== SubscriptionStatus.PRO && (currentUser.multiplayerTrialsUsed || 0) >= MAX_FREE_MULTIPLAYER_TRIALS) {
+      setError("आपने अपने 2 मुफ़्त 'Test with Friends' ट्रायल्स पूरे कर लिए हैं। कृपया PRO सब्सक्रिप्शन लें।");
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     try {
@@ -285,6 +373,12 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
 
   const handleJoinRoom = async (code: string) => {
     if (!currentUser) return;
+    
+    if (currentUser.subscription !== SubscriptionStatus.PRO && (currentUser.multiplayerTrialsUsed || 0) >= MAX_FREE_MULTIPLAYER_TRIALS) {
+      setError("आपने अपने 2 मुफ़्त 'Test with Friends' ट्रायल्स पूरे कर लिए हैं। कृपया PRO सब्सक्रिप्शन लें।");
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
     const upperCode = code.toUpperCase();
@@ -472,7 +566,15 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
 
   // --- UI Screens ---
   if (!room) {
-    return <MultiplayerDashboard onJoin={handleJoinRoom} onCreate={handleCreateRoom} isLoading={isLoading} error={error} />;
+    return (
+      <MultiplayerDashboard 
+        currentUser={currentUser}
+        onJoin={handleJoinRoom} 
+        onCreate={handleCreateRoom} 
+        isLoading={isLoading} 
+        error={error} 
+      />
+    );
   }
 
   if (room.status === 'waiting') {
@@ -519,7 +621,8 @@ export const TestWithFriends: React.FC<{ currentUser: User | null }> = ({ curren
 
 // --- Sub-components ---
 
-const MultiplayerDashboard = ({ onJoin, onCreate, isLoading, error }: any) => {
+const MultiplayerDashboard = ({ currentUser, onJoin, onCreate, isLoading, error }: any) => {
+  const navigate = useNavigate();
   const [code, setCode] = useState('');
   const [topic, setTopic] = useState('');
   const [settings, setSettings] = useState({
@@ -530,12 +633,75 @@ const MultiplayerDashboard = ({ onJoin, onCreate, isLoading, error }: any) => {
     maxPlayers: 5
   });
 
+  const isPro = currentUser?.subscription === SubscriptionStatus.PRO;
+  const usedTrials = currentUser?.multiplayerTrialsUsed || 0;
+  const freeTrialsLeft = Math.max(0, MAX_FREE_MULTIPLAYER_TRIALS - usedTrials);
+
   return (
-    <div className="pt-32 pb-20 px-6 max-w-4xl mx-auto space-y-12">
+    <div className="pt-32 pb-20 px-6 max-w-4xl mx-auto space-y-10">
       <div className="text-center space-y-4">
         <h2 className="text-5xl font-black tracking-tight text-white">Test With <span className="gradient-text">Friends</span> 🔥</h2>
         <p className="text-slate-400 font-medium text-lg">Challenge your friends in real-time competitive tests.</p>
       </div>
+
+      {/* Free Trial Banner / PRO Status Banner */}
+      {!isPro ? (
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass p-6 rounded-3xl border border-indigo-500/30 bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-indigo-500/10 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl shadow-indigo-500/5"
+        >
+          <div className="flex items-center gap-4 text-center sm:text-left">
+            <div className="w-12 h-12 bg-indigo-500/20 rounded-2xl flex items-center justify-center text-indigo-400 shrink-0 border border-indigo-500/30">
+              <Zap size={24} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 justify-center sm:justify-start">
+                <span className="text-white font-black text-base">Free Trial:</span>
+                <span className="text-indigo-400 font-black text-base">{freeTrialsLeft} of {MAX_FREE_MULTIPLAYER_TRIALS} free matches left</span>
+              </div>
+              <p className="text-xs text-slate-400 font-medium mt-0.5">
+                Play 2 free matches with friends. After 2 tests, upgrade to PRO for unlimited multiplayer challenges!
+              </p>
+            </div>
+          </div>
+          <button 
+            onClick={() => navigate('/payment')}
+            className="px-6 py-3 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-xs text-white shadow-xl shadow-indigo-500/30 transition-all active:scale-95 whitespace-nowrap flex items-center gap-2 shrink-0"
+          >
+            <Crown size={15} /> Upgrade to PRO
+          </button>
+        </motion.div>
+      ) : (
+        <div className="glass p-4 px-6 rounded-2xl border border-indigo-500/20 bg-indigo-500/5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="py-1 px-3 bg-indigo-500 text-white rounded-full font-black text-[10px] uppercase tracking-widest">PRO UNLOCKED</span>
+            <span className="text-sm font-bold text-slate-300">Unlimited Multiplayer Challenges Active</span>
+          </div>
+          <span className="text-xs font-black text-indigo-400">⚡ Unlimited Access</span>
+        </div>
+      )}
+
+      {error && (
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400 text-sm font-medium flex items-center justify-between"
+        >
+          <div className="flex items-center gap-3">
+            <AlertCircle size={18} className="shrink-0" />
+            <span>{error}</span>
+          </div>
+          {!isPro && usedTrials >= MAX_FREE_MULTIPLAYER_TRIALS && (
+            <button 
+              onClick={() => navigate('/payment')}
+              className="text-xs font-black bg-red-500/20 hover:bg-red-500/30 text-white px-3 py-1.5 rounded-xl transition-all"
+            >
+              Get PRO
+            </button>
+          )}
+        </motion.div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
         {/* Join Room */}
@@ -1137,6 +1303,20 @@ const MultiplayerResults = ({ room, scores, currentUser, onLeave, onReplay }: an
                      />
                   </div>
                </div>
+
+               {currentUser?.subscription !== SubscriptionStatus.PRO && (
+                 <div className="p-4 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl space-y-1">
+                   <div className="flex justify-between items-center text-xs font-bold">
+                     <span className="text-slate-300">Multiplayer Free Trials</span>
+                     <span className="text-indigo-400 font-black">{Math.min(2, currentUser?.multiplayerTrialsUsed || 0)} / 2 Used</span>
+                   </div>
+                   <p className="text-[11px] text-slate-400">
+                     {(currentUser?.multiplayerTrialsUsed || 0) >= 2 
+                       ? "All free trials used! Upgrade to PRO to challenge friends anytime."
+                       : `${Math.max(0, 2 - (currentUser?.multiplayerTrialsUsed || 0))} free multiplayer match remaining.`}
+                   </p>
+                 </div>
+               )}
 
                <button 
                   onClick={() => setShowReview(true)}

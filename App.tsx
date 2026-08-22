@@ -44,7 +44,8 @@ import {
   LifeBuoy,
   Camera,
   Sparkles,
-  UploadCloud
+  UploadCloud,
+  Crown
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -722,10 +723,12 @@ const AppContent: React.FC = () => {
               email: userData.email,
               password: userData.password,
               subscription: subscription,
-              trialsUsed: userData.trialsUsed,
+              trialsUsed: userData.trialsUsed ?? 0,
+              multiplayerTrialsUsed: userData.multiplayerTrialsUsed ?? 0,
               isAdmin: userData.isAdmin,
               sessionId: userData.sessionId,
               payment_id: userData.payment_id,
+              photoURL: userData.photoURL,
               updated_at: userData.updated_at
             };
             
@@ -2207,10 +2210,17 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
             <div className="flex flex-col sm:flex-row gap-5 pt-4">
               <button 
                 onClick={() => navigate('/multiplayer')}
-                className="w-full py-5 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 hover:from-indigo-500/20 hover:to-purple-500/20 rounded-2xl font-black text-white border border-indigo-500/20 shadow-2xl shadow-indigo-500/10 flex items-center justify-center gap-3 transition-all active:scale-95 group mb-4"
+                className="w-full py-5 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 hover:from-indigo-500/20 hover:to-purple-500/20 rounded-2xl font-black text-white border border-indigo-500/20 shadow-2xl shadow-indigo-500/10 flex items-center justify-center gap-3 transition-all active:scale-95 group mb-4 relative overflow-hidden"
               >
                 <Users size={24} className="group-hover:rotate-12 transition-transform" /> 
                 <span className="text-lg">Test With <span className="gradient-text">Friends</span> 🔥</span>
+                {currentUser?.subscription === SubscriptionStatus.PRO ? (
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] py-1 px-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-full font-black tracking-widest uppercase italic shadow-lg shadow-green-500/20">PRO UNLOCKED</span>
+                ) : (
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] py-1 px-3 bg-indigo-500/80 text-white rounded-full font-black tracking-widest uppercase italic shadow-lg shadow-indigo-500/20">
+                    {Math.max(0, 2 - (currentUser?.multiplayerTrialsUsed || 0))}/2 Free
+                  </span>
+                )}
               </button>
             </div>
 
@@ -2448,54 +2458,158 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
 interface PaymentProps {
   appConfig: AppConfig;
   isLoading: boolean;
+  currentUser: User | null;
   handleRazorpayPayment: () => Promise<void>;
+  onUpdateUser: (user: User) => void;
+  showAlert: (title: string, message: string) => void;
+  navigate: any;
 }
 
-const Payment: React.FC<PaymentProps> = ({ appConfig, isLoading, handleRazorpayPayment }) => {
+const Payment: React.FC<PaymentProps> = ({ 
+  appConfig, 
+  isLoading, 
+  currentUser,
+  handleRazorpayPayment, 
+  onUpdateUser,
+  showAlert,
+  navigate
+}) => {
+  const [claimPaymentId, setClaimPaymentId] = useState('');
+  const [isClaiming, setIsClaiming] = useState(false);
+  const [showClaimSection, setShowClaimSection] = useState(false);
+
+  const handleManualClaim = async () => {
+    if (!currentUser) return;
+    if (!claimPaymentId.trim()) {
+      showAlert("Missing ID", "कृपया अपना Payment ID (जैसे pay_xxxx) या Transaction UTR नंबर दर्ज करें।");
+      return;
+    }
+
+    setIsClaiming(true);
+    try {
+      const res = await fetch('/api/payment/claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          payment_id: claimPaymentId.trim(),
+          userId: currentUser.id
+        })
+      });
+
+      const data = await res.json();
+      if (data.status === 'success') {
+        const updatedUser: User = {
+          ...currentUser,
+          subscription: SubscriptionStatus.PRO,
+          payment_id: claimPaymentId.trim()
+        };
+        onUpdateUser(updatedUser);
+        localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
+        showAlert("🎉 Payment Verified!", "बधाई हो! आपका Pro Subscription सफलतापूर्वक एक्टिवेट हो गया है।");
+        navigate('/dashboard');
+      } else {
+        showAlert("Verification Failed", data.message || "Payment ID verify नहीं हो सकी। कृपया सही Payment ID चेक करें।");
+      }
+    } catch (err: any) {
+      showAlert("Error", "वेरिफिकेशन में त्रुटि: " + err.message);
+    } finally {
+      setIsClaiming(false);
+    }
+  };
+
   return (
     <div className="pt-32 pb-20 px-6 flex justify-center items-start min-h-screen">
       <motion.div 
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-xl space-y-10"
+        className="w-full max-w-xl space-y-8"
       >
         <div className="text-center space-y-3">
           <h2 className="text-4xl md:text-5xl font-black tracking-tight">Upgrade to <span className="gradient-text">Pro</span></h2>
           <p className="text-slate-400 font-medium text-sm md:text-base">Unlock unlimited AI generation and compete at elite levels.</p>
         </div>
         
-        <div className="glass p-6 md:p-10 rounded-[2.5rem] md:rounded-[3rem] space-y-10 text-center shadow-2xl shadow-indigo-500/10 border-white/10">
-          <div className="space-y-8">
+        <div className="glass p-6 md:p-10 rounded-[2.5rem] md:rounded-[3rem] space-y-8 text-center shadow-2xl shadow-indigo-500/10 border-white/10">
+          <div className="space-y-6">
             <div className="pt-2 space-y-1">
               <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Subscription Plan</p>
               <div className="text-5xl md:text-6xl font-black text-white tracking-tighter">₹{appConfig.subscriptionPrice}</div>
-              <p className="text-slate-400 font-bold">30 Days Access</p>
+              <p className="text-slate-400 font-bold text-sm">30 Days Unlimited Access</p>
             </div>
 
-            <div className="pt-4">
+            <div className="pt-2">
               <button 
-                disabled={isLoading}
+                disabled={isLoading || isClaiming}
                 onClick={handleRazorpayPayment}
-                className="inline-flex items-center justify-center gap-3 w-full py-6 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50"
+                className="inline-flex items-center justify-center gap-3 w-full py-5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 text-white"
               >
                 {isLoading ? <Loader2 className="animate-spin" /> : <Zap size={24} />}
-                {isLoading ? 'Processing...' : 'Buy Pro'}
+                {isLoading ? 'Processing...' : 'Pay Now with UPI / Card'}
               </button>
             </div>
           </div>
 
-          <div className="space-y-6 text-left border-t border-white/5 pt-10">
-            <h4 className="text-xl font-black text-white">Pro Benefits:</h4>
-            <ul className="space-y-4">
+          {/* Already Paid / Claim Pro Section */}
+          <div className="pt-6 border-t border-white/10 space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-300">पैसे कट गए लेकिन Pro नहीं हुआ?</span>
+              <button 
+                type="button"
+                onClick={() => setShowClaimSection(!showClaimSection)}
+                className="text-xs font-black text-indigo-400 hover:text-indigo-300 underline underline-offset-4 transition-colors"
+              >
+                {showClaimSection ? "Hide" : "Claim Pro with Payment ID"}
+              </button>
+            </div>
+
+            {showClaimSection && (
+              <motion.div 
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                className="p-5 bg-indigo-500/10 border border-indigo-500/30 rounded-2xl text-left space-y-4"
+              >
+                <div className="space-y-1">
+                  <h4 className="text-sm font-black text-white flex items-center gap-2">
+                    <ShieldCheck size={16} className="text-indigo-400" /> Verify & Restore Payment
+                  </h4>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    यदि आपके बैंक/UPI से पैसे कट गए हैं, तो अपने SMS, ईमेल या UPI रसीद से <b>Razorpay Payment ID (pay_xxxx)</b> या <b>UTR Number</b> दर्ज करें:
+                  </p>
+                </div>
+
+                <div className="space-y-3">
+                  <input 
+                    type="text" 
+                    value={claimPaymentId}
+                    onChange={(e) => setClaimPaymentId(e.target.value)}
+                    placeholder="उदा. pay_Pxyz123456 या UPI UTR"
+                    className="w-full px-4 py-3 bg-black/40 border border-white/15 rounded-xl font-mono text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500"
+                  />
+                  <button 
+                    disabled={isClaiming || !claimPaymentId.trim()}
+                    onClick={handleManualClaim}
+                    className="w-full py-3.5 bg-indigo-500 hover:bg-indigo-600 disabled:opacity-50 rounded-xl font-black text-xs uppercase tracking-widest text-white shadow-lg shadow-indigo-500/20 transition-all flex items-center justify-center gap-2"
+                  >
+                    {isClaiming ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                    {isClaiming ? 'Verifying...' : 'Verify & Activate Pro'}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </div>
+
+          <div className="space-y-5 text-left border-t border-white/5 pt-6">
+            <h4 className="text-lg font-black text-white">Pro Benefits:</h4>
+            <ul className="space-y-3">
               {[
                 'Unlimited 100-Question Tests',
-                'Advanced Performance Analytics',
-                'Priority Access',
-                'Ad-Free Experience',
-                '30 Days Premium Access'
+                'Unlimited Multiplayer Challenges With Friends',
+                'Advanced Performance Analytics & AI Recommendations',
+                'Priority Mock Test Generation',
+                '30 Days Full Premium Access'
               ].map(benefit => (
-                <li key={benefit} className="flex items-center gap-3 text-slate-300 font-medium">
-                  <div className="w-5 h-5 bg-green-500/20 rounded-full flex items-center justify-center text-green-400">
+                <li key={benefit} className="flex items-center gap-3 text-slate-300 font-medium text-sm">
+                  <div className="w-5 h-5 bg-green-500/20 rounded-full flex items-center justify-center text-green-400 shrink-0">
                     <CheckCircle2 size={14} />
                   </div>
                   {benefit}
@@ -2504,9 +2618,9 @@ const Payment: React.FC<PaymentProps> = ({ appConfig, isLoading, handleRazorpayP
             </ul>
           </div>
 
-          <div className="flex items-center justify-center gap-6 pt-4">
-             {['Secure', 'Instant', '24/7 Support'].map(tag => (
-               <div key={tag} className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-600">
+          <div className="flex items-center justify-center gap-6 pt-2">
+             {['100% Secure', 'Instant Activation', '24/7 Support'].map(tag => (
+               <div key={tag} className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-500">
                  <div className="w-1 h-1 bg-indigo-500 rounded-full"></div> {tag}
                </div>
              ))}
@@ -2678,12 +2792,31 @@ const Payment: React.FC<PaymentProps> = ({ appConfig, isLoading, handleRazorpayP
                   <div className="p-2 bg-purple-500/10 rounded-lg text-purple-400">
                     <Zap size={18} />
                   </div>
-                  <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">Free Test Trials</span>
+                  <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">Free Solo Tests</span>
                 </div>
-                <span className="font-bold text-slate-200">{currentUser.trialsUsed}/2</span>
+                <span className="font-bold text-slate-200">{currentUser.trialsUsed ?? 0}/2</span>
+              </div>
+
+              <div className="flex justify-between items-center p-4 rounded-2xl bg-white/[0.02] border border-white/[0.05]">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-500/10 rounded-lg text-indigo-400">
+                    <Users size={18} />
+                  </div>
+                  <span className="text-slate-500 text-xs font-bold uppercase tracking-widest">Multiplayer Trials</span>
+                </div>
+                <span className="font-bold text-slate-200">{currentUser.multiplayerTrialsUsed ?? 0}/2</span>
               </div>
             </div>
           </div>
+
+          {currentUser.subscription !== SubscriptionStatus.PRO && (
+            <button 
+              onClick={() => navigate('/payment')}
+              className="w-full py-4 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2 shadow-xl shadow-indigo-500/20 transition-all active:scale-[0.98]"
+            >
+              <Crown size={18} /> Upgrade to Pro
+            </button>
+          )}
 
           <div className="pt-4 space-y-3">
             {!currentUser.isAdmin && (
@@ -2767,6 +2900,22 @@ const Payment: React.FC<PaymentProps> = ({ appConfig, isLoading, handleRazorpayP
           }
         }
       );
+    };
+
+    const toggleSubscription = async (userId: string, currentSub: SubscriptionStatus) => {
+      const nextSub = currentSub === SubscriptionStatus.PRO ? SubscriptionStatus.FREE : SubscriptionStatus.PRO;
+      setIsLoadingWithRef(true);
+      try {
+        await updateDoc(doc(db, 'users', userId), {
+          subscription: nextSub
+        });
+        setAllUsers((prev: any) => prev.map((u: any) => u.id === userId ? { ...u, subscription: nextSub } : u));
+        showAlert("Success", `User subscription updated to ${nextSub}!`);
+      } catch (err: any) {
+        showAlert("Error", "Failed to update subscription: " + err.message);
+      } finally {
+        setIsLoadingWithRef(false);
+      }
     };
 
     const deleteUser = (userId: string) => {
@@ -2875,6 +3024,7 @@ const Payment: React.FC<PaymentProps> = ({ appConfig, isLoading, handleRazorpayP
                   <tr className="text-slate-500 text-[10px] font-black uppercase tracking-[0.2em]">
                     <th className="px-4 pb-2">User</th>
                     <th className="px-4 pb-2">Status</th>
+                    <th className="px-4 pb-2">Payment ID</th>
                     <th className="px-4 pb-2 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -2911,16 +3061,38 @@ const Payment: React.FC<PaymentProps> = ({ appConfig, isLoading, handleRazorpayP
                           {user.subscription}
                         </span>
                       </td>
+                      <td className="px-4 py-4 bg-white/[0.02] border-y border-white/[0.05]">
+                        {user.payment_id ? (
+                          <span className="text-[10px] font-mono text-indigo-400 bg-indigo-500/10 px-2 py-1 rounded-md border border-indigo-500/20">
+                            {user.payment_id}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-slate-600 italic">None</span>
+                        )}
+                      </td>
                       <td className="px-4 py-4 bg-white/[0.02] rounded-r-2xl border-y border-r border-white/[0.05] text-right">
                         <div className="flex items-center justify-end gap-2">
                           {!user.isAdmin && (
-                            <button 
-                              onClick={() => deleteUser(user.id)} 
-                              className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
-                              title="Delete User"
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                            <>
+                              <button
+                                onClick={() => toggleSubscription(user.id, user.subscription)}
+                                className={cn(
+                                  "px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all",
+                                  user.subscription === SubscriptionStatus.PRO 
+                                    ? "bg-slate-800 text-slate-400 hover:bg-slate-700" 
+                                    : "bg-indigo-500 text-white hover:bg-indigo-600 shadow-md shadow-indigo-500/20"
+                                )}
+                              >
+                                {user.subscription === SubscriptionStatus.PRO ? "Set Free" : "Make PRO"}
+                              </button>
+                              <button 
+                                onClick={() => deleteUser(user.id)} 
+                                className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-all"
+                                title="Delete User"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>
@@ -3026,7 +3198,15 @@ const Payment: React.FC<PaymentProps> = ({ appConfig, isLoading, handleRazorpayP
                   startTest={startTest} 
                   navigate={navigate} 
                 /> : <Navigate to="/auth" />} />
-                <Route path="/payment" element={currentUser ? <Payment appConfig={appConfig} isLoading={isLoading} handleRazorpayPayment={handleRazorpayPayment} /> : <Navigate to="/auth" />} />
+                <Route path="/payment" element={currentUser ? <Payment 
+                  appConfig={appConfig} 
+                  isLoading={isLoading} 
+                  currentUser={currentUser}
+                  handleRazorpayPayment={handleRazorpayPayment} 
+                  onUpdateUser={setCurrentUser}
+                  showAlert={showAlert}
+                  navigate={navigate}
+                /> : <Navigate to="/auth" />} />
                 <Route path="/test" element={currentUser ? <TestInterface 
                   currentTest={currentTest}
                   activeQuestionIndex={activeQuestionIndex}
@@ -3046,7 +3226,10 @@ const Payment: React.FC<PaymentProps> = ({ appConfig, isLoading, handleRazorpayP
                   leaderboard={leaderboard}
                   currentUser={currentUser}
                 /> : <Navigate to="/auth" />} />
-                <Route path="/multiplayer" element={currentUser ? <TestWithFriends currentUser={currentUser} /> : <Navigate to="/auth" />} />
+                <Route path="/multiplayer" element={currentUser ? <TestWithFriends 
+                  currentUser={currentUser} 
+                  onUpdateUser={setCurrentUser}
+                /> : <Navigate to="/auth" />} />
                 <Route path="/bookmarks" element={currentUser ? <BookmarksPage 
                   bookmarks={bookmarks}
                   onRemove={toggleBookmark}

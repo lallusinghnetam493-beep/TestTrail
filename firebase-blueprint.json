@@ -11,6 +11,7 @@
         "password": { "type": "string", "description": "Stored for fallback (not recommended for production but kept for migration consistency)" },
         "subscription": { "type": "string", "enum": ["FREE", "PRO", "PENDING"] },
         "trialsUsed": { "type": "number" },
+        "multiplayerTrialsUsed": { "type": "number", "description": "Number of free multiplayer tests used" },
         "isAdmin": { "type": "boolean" },
         "payment_id": { "type": "string", "description": "Razorpay payment ID" },
         "updated_at": { "type": "string", "format": "date-time" },

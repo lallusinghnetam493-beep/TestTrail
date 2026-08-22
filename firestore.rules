@@ -69,7 +69,7 @@ service cloud.firestore {
       allow create: if isAuthenticated() && request.auth.uid == userId;
       allow update: if (
           isOwner(userId) && 
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fullName', 'password', 'trialsUsed', 'sessionId'])
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['fullName', 'password', 'trialsUsed', 'multiplayerTrialsUsed', 'sessionId', 'photoURL'])
         ) || 
         isAdmin() ||
         (request.resource.data.get('server_auth_secret', '') == "TT_SECRET_998877_APP_X_2024") ||

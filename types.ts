@@ -14,6 +14,7 @@ export interface User {
   password?: string;
   subscription: SubscriptionStatus;
   trialsUsed: number;
+  multiplayerTrialsUsed?: number;
   isAdmin?: boolean;
   sessionId?: string;
   payment_id?: string;

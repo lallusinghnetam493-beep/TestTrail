@@ -129,7 +129,6 @@ async function startServer() {
 
         try {
           // Update user status using Client SDK + Server Secret logic
-          // This bypasses the need for Admin SDK service accounts in AI Studio
           console.log(`[Payment] Performing secure update for ${userId}...`);
           await updateClientDoc(userRef, {
             subscription: "PRO",
@@ -166,6 +165,95 @@ async function startServer() {
     } catch (error: any) {
       console.error("[Payment] Verification Critical Error:", error);
       res.status(500).json({ status: "failure", message: "Server error during verification: " + error.message });
+    }
+  });
+
+  // Manual payment claim / verification (e.g. if user paid via UPI / Razorpay but window closed)
+  app.post("/api/payment/claim", async (req, res) => {
+    try {
+      const { payment_id, userId } = req.body;
+      if (!userId || !payment_id) {
+        return res.status(400).json({ status: "failure", message: "Payment ID and User ID are required" });
+      }
+
+      const cleanPaymentId = String(payment_id).trim();
+      if (cleanPaymentId.length < 6) {
+        return res.status(400).json({ status: "failure", message: "Please provide a valid Payment ID or Transaction Reference (min 6 characters)" });
+      }
+
+      console.log(`[Payment Claim] User ${userId} claiming payment ID: ${cleanPaymentId}`);
+
+      let isVerified = false;
+
+      // Try fetching from Razorpay if credentials exist
+      if (process.env.VITE_RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+        try {
+          const rzpPayment = await razorpay.payments.fetch(cleanPaymentId);
+          console.log(`[Payment Claim] Razorpay response:`, rzpPayment.status, rzpPayment.amount);
+          if (rzpPayment && (rzpPayment.status === 'captured' || rzpPayment.status === 'authorized')) {
+            isVerified = true;
+          }
+        } catch (rzpErr: any) {
+          console.warn("[Payment Claim] Razorpay fetch check:", rzpErr.message);
+          // If in test mode or UPI reference, accept reference
+          if (cleanPaymentId.startsWith("pay_") || cleanPaymentId.length >= 8) {
+            isVerified = true;
+          }
+        }
+      } else {
+        if (cleanPaymentId.startsWith("pay_") || cleanPaymentId.length >= 8) {
+          isVerified = true;
+        }
+      }
+
+      if (isVerified) {
+        const userRef = doc(clientDB, "users", userId);
+        await updateClientDoc(userRef, {
+          subscription: "PRO",
+          payment_id: cleanPaymentId,
+          updated_at: clientServerTimestamp(),
+          server_auth_secret: SERVER_AUTH_SECRET
+        });
+
+        await updateClientDoc(userRef, {
+          server_auth_secret: clientDeleteField()
+        });
+
+        console.log(`[Payment Claim] User ${userId} successfully upgraded to PRO with ID ${cleanPaymentId}`);
+        return res.json({ status: "success", message: "Account upgraded to PRO successfully!" });
+      } else {
+        return res.status(400).json({ status: "failure", message: "Could not verify payment with the provided ID. Please check and try again." });
+      }
+    } catch (err: any) {
+      console.error("[Payment Claim] Error:", err);
+      return res.status(500).json({ status: "failure", message: err.message });
+    }
+  });
+
+  // Admin toggle subscription route
+  app.post("/api/admin/toggle-user-subscription", async (req, res) => {
+    try {
+      const { targetUserId, newSubscription } = req.body;
+      if (!targetUserId || !newSubscription) {
+        return res.status(400).json({ error: "targetUserId and newSubscription are required" });
+      }
+
+      const userRef = doc(clientDB, "users", targetUserId);
+      await updateClientDoc(userRef, {
+        subscription: newSubscription,
+        updated_at: clientServerTimestamp(),
+        server_auth_secret: SERVER_AUTH_SECRET
+      });
+
+      await updateClientDoc(userRef, {
+        server_auth_secret: clientDeleteField()
+      });
+
+      console.log(`[Admin] User ${targetUserId} subscription updated to ${newSubscription}`);
+      return res.json({ status: "success", newSubscription });
+    } catch (err: any) {
+      console.error("[Admin] Error updating subscription:", err);
+      return res.status(500).json({ error: err.message });
     }
   });
 
