@@ -1220,17 +1220,45 @@ const AppContent: React.FC = () => {
         throw new Error("Could not load payment gateway. Please check your internet connection.");
       }
 
-      // Step 3: Trigger Razorpay Popup
+      // Step 3: Trigger Razorpay Popup with UPI Intent Priority
       const options = {
         key: import.meta.env.VITE_RAZORPAY_KEY_ID,
         amount: order.amount,
         currency: order.currency,
         name: "TestTrail AI",
-        description: "Pro Subscription",
+        description: "Pro Subscription (30 Days)",
         order_id: order.id,
         retry: {
           enabled: true,
           max_count: 3
+        },
+        config: {
+          display: {
+            preferences: {
+              show_default_blocks: true
+            },
+            sequence: ["block.upi", "block.other"],
+            blocks: {
+              upi: {
+                name: "Pay using UPI (PhonePe, GPay, Paytm)",
+                instruments: [
+                  {
+                    method: "upi",
+                    flows: ["intent", "qr", "collect"],
+                    apps: ["phonepe", "google_pay", "paytm", "bhim", "cred"]
+                  }
+                ]
+              },
+              other: {
+                name: "Card / Netbanking / Wallets",
+                instruments: [
+                  { method: "card" },
+                  { method: "netbanking" },
+                  { method: "wallet" }
+                ]
+              }
+            }
+          }
         },
         modal: {
           ondismiss: () => {
@@ -2474,9 +2502,22 @@ const Payment: React.FC<PaymentProps> = ({
   showAlert,
   navigate
 }) => {
+  const [isInIframe, setIsInIframe] = useState(false);
   const [claimPaymentId, setClaimPaymentId] = useState('');
   const [isClaiming, setIsClaiming] = useState(false);
   const [showClaimSection, setShowClaimSection] = useState(false);
+
+  useEffect(() => {
+    try {
+      setIsInIframe(window.self !== window.top);
+    } catch (e) {
+      setIsInIframe(true);
+    }
+  }, []);
+
+  const openInExternalBrowser = () => {
+    window.open(window.location.href, '_blank');
+  };
 
   const handleManualClaim = async () => {
     if (!currentUser) return;
@@ -2548,6 +2589,24 @@ const Payment: React.FC<PaymentProps> = ({
               </button>
             </div>
           </div>
+
+          {isInIframe && (
+            <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-left space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-amber-300">📱 Mobile App (PhonePe / GPay) Direct Open Mode</span>
+                <button
+                  type="button"
+                  onClick={openInExternalBrowser}
+                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-black font-black text-[11px] rounded-xl transition-all flex items-center gap-1.5 shadow-md shadow-amber-500/20"
+                >
+                  <Sparkles size={13} /> Open in Browser
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                यदि आप Preview में हैं, तो PhonePe / GPay ऐप को 1-Tap में खोलने के लिए ऊपर <b>'Open in Browser'</b> दबाएं।
+              </p>
+            </div>
+          )}
 
           {/* Mobile UPI Help Accordion / Tips */}
           <div className="p-4 bg-white/[0.02] border border-white/10 rounded-2xl text-left space-y-2.5">
