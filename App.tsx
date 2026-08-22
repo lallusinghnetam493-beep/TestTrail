@@ -2541,7 +2541,7 @@ const Payment: React.FC<PaymentProps> = ({
                 className="inline-flex items-center justify-center gap-3 w-full py-5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 rounded-2xl font-black text-lg shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 text-white cursor-pointer"
               >
                 {isLoading ? <Loader2 className="animate-spin" /> : <Zap size={24} />}
-                {isLoading ? 'Connecting Gateway...' : 'Pay Now with PhonePe / UPI / Card'}
+                {isLoading ? 'Processing...' : 'Pay Now'}
               </button>
             </div>
           </div>
