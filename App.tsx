@@ -2227,17 +2227,10 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
             <div className="flex flex-col sm:flex-row gap-5 pt-4">
               <button 
                 onClick={() => navigate('/multiplayer')}
-                className="w-full py-5 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 hover:from-indigo-500/20 hover:to-purple-500/20 rounded-2xl font-black text-white border border-indigo-500/20 shadow-2xl shadow-indigo-500/10 flex items-center justify-center gap-3 transition-all active:scale-95 group mb-4 relative overflow-hidden"
+                className="w-full py-5 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 hover:from-indigo-500/20 hover:to-purple-500/20 rounded-2xl font-black text-white border border-indigo-500/20 shadow-2xl shadow-indigo-500/10 flex items-center justify-center gap-3 transition-all active:scale-95 group mb-4"
               >
-                <Users size={24} className="group-hover:rotate-12 transition-transform" /> 
+                <Users size={24} className="group-hover:rotate-12 transition-transform text-indigo-400" /> 
                 <span className="text-lg">Test With <span className="gradient-text">Friends</span> 🔥</span>
-                {currentUser?.subscription === SubscriptionStatus.PRO ? (
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] py-1 px-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-full font-black tracking-widest uppercase italic shadow-lg shadow-green-500/20">PRO UNLOCKED</span>
-                ) : (
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-[9px] py-1 px-3 bg-indigo-500/80 text-white rounded-full font-black tracking-widest uppercase italic shadow-lg shadow-indigo-500/20">
-                    {Math.max(0, 2 - (currentUser?.multiplayerTrialsUsed || 0))}/2 Free
-                  </span>
-                )}
               </button>
             </div>
 
