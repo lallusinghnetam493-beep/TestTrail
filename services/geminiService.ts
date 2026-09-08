@@ -5,9 +5,8 @@ import { Question, Difficulty } from "../types";
 export const generateQuestions = async (topic: string, count: number, language: string, difficulty: Difficulty): Promise<Question[]> => {
   const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   
-  // Use Flash model for all requests. 
-  // It is faster and more reliable for returning structured JSON at all volumes.
-  const modelName = "gemini-3-flash-preview";
+  // Use standard gemini-3.8-flash model for fast structured JSON generation
+  const modelName = "gemini-3.8-flash";
 
   const systemInstruction = `You are an expert exam paper setter for Indian government exams (UPSC, SSC CGL, Banking, Railway, SBI PO, etc.).
   Your task is to generate high-quality, factually accurate multiple choice questions.
@@ -74,8 +73,13 @@ export const generateQuestions = async (topic: string, count: number, language: 
     }
 
     return questions;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini Generation Error:", error);
+    const errStr = typeof error === 'object' && error ? (error.message || JSON.stringify(error)) : String(error);
+    
+    if (errStr.includes("429") || errStr.includes("RESOURCE_EXHAUSTED") || errStr.includes("quota")) {
+      throw new Error("Google AI की फ्री लिमिट (Rate Limit: 429) पूरी हो गई है। कृपया 1 से 2 मिनट इंतज़ार करके दोबारा प्रयास करें।");
+    }
     if (error instanceof SyntaxError) {
       throw new Error("The response was truncated due to its large size. Please try again with a more specific topic or 50 questions for best results.");
     }
@@ -90,7 +94,7 @@ export const generateAvatar = async (userName: string): Promise<string> => {
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-image',
+      model: 'gemini-3.1-flash-lite-image',
       contents: {
         parts: [
           {
