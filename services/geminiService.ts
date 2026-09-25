@@ -23,14 +23,20 @@ export function getApiKeyPool(): string[] {
     if (!raw) continue;
     const parts = raw.split(/[\n,;]+/).map(k => k.trim()).filter(Boolean);
     for (const key of parts) {
-      if (key && key.length > 15 && !pool.includes(key) && !key.includes('MISSING')) {
+      if (
+        key && 
+        key.length > 15 && 
+        !pool.includes(key) && 
+        !key.includes('MISSING') &&
+        !key.startsWith('AIzaSyBe32')
+      ) {
         pool.push(key);
       }
     }
   }
 
   // Fallback if no valid key found in pool
-  if (pool.length === 0 && process.env.GEMINI_API_KEY) {
+  if (pool.length === 0 && process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.startsWith('AIzaSyBe32')) {
     pool.push(process.env.GEMINI_API_KEY.trim());
   }
 
@@ -94,32 +100,60 @@ function saveCachedQuestions(topic: string, language: string, difficulty: Diffic
 }
 
 export const generateQuestions = async (topic: string, count: number, language: string, difficulty: Difficulty): Promise<Question[]> => {
+  // 1. Check local cache first for instant retrieval
+  const cached = getCachedQuestions(topic, language, difficulty);
+  if (cached && cached.length >= count) {
+    console.log(`[Gemini] Serving ${count} questions directly from offline cache.`);
+    return cached.slice(0, count);
+  }
+
+  // 2. Call server API endpoint (recommended approach for full-stack, handles multi-key rotation and batching)
+  try {
+    console.log(`[Gemini Client] Requesting ${count} questions from server /api/questions/generate...`);
+    const resp = await fetch("/api/questions/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic, count, language, difficulty })
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data?.success && Array.isArray(data.questions) && data.questions.length > 0) {
+        console.log(`[Gemini Client] Server generated ${data.questions.length} questions successfully!`);
+        saveCachedQuestions(topic, language, difficulty, data.questions);
+        return data.questions;
+      }
+    } else {
+      const errData = await resp.json().catch(() => null);
+      if (errData?.error) {
+        console.warn("[Gemini Client] Server returned error, falling back to direct client call:", errData.error);
+      }
+    }
+  } catch (netErr) {
+    console.warn("[Gemini Client] Server route unreachable, attempting direct client generation...", netErr);
+  }
+
+  // 3. Fallback: Direct client-side generation using working model pool
   const pool = getApiKeyPool();
-  console.log(`[Gemini Pool] Active API key count: ${pool.length}`);
+  console.log(`[Gemini Client Fallback] Active API key count: ${pool.length}`);
 
   const systemInstruction = `You are an expert exam paper setter for Indian government exams (UPSC, SSC CGL, Banking, Railway, SBI PO, etc.).
-  Your task is to generate high-quality, factually accurate multiple choice questions.
-  
-  STRICT CONSTRAINTS:
-  1. Quantity: You MUST generate EXACTLY the number of questions requested (${count}).
-  2. Language: All content MUST be in ${language}.
-  3. Difficulty: Adaptive ${difficulty} level.
-  4. Accuracy: All facts must be 100% accurate.
-  5. Explanations: Provide a CLEAR, HELPFUL explanation for the correct answer (max 30 words).
-  6. Subject: Categorize each question into a relevant subject (e.g., Mathematics, History, Science, Reasoning).
-  7. Format: Return ONLY a valid JSON array of objects.
-  8. Conciseness: Keep question text and options clear and brief.
-  9. Language: Generate content in ${language}. If Hindi is requested, provide both the text and explanation in Hindi.
-  `;
+Your task is to generate high-quality, factually accurate multiple choice questions.
 
-  const prompt = `Generate exactly ${count} multiple choice questions about "${topic}" in ${language}. For each question, include a 'subject' and an 'explanation'. Focus on breadth and depth suitable for ${difficulty} difficulty.`;
+STRICT CONSTRAINTS:
+1. Quantity: You MUST generate EXACTLY the number of questions requested (${count}).
+2. Language: All content MUST be in ${language}.
+3. Difficulty: Adaptive ${difficulty} level.
+4. Accuracy: All facts must be 100% accurate.
+5. Explanations: Provide a CLEAR, HELPFUL explanation for the correct answer.
+6. Subject: Categorize each question into a relevant subject.
+7. Format: Return ONLY a valid JSON array of objects.`;
+
+  const prompt = `Generate exactly ${count} multiple choice questions about "${topic}" in ${language}. For each question, include 'subject' and 'explanation'. Difficulty: ${difficulty}.`;
 
   const config = {
     systemInstruction,
-    seed: 42,
     responseMimeType: "application/json",
-    maxOutputTokens: 20000,
-    thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
     responseSchema: {
       type: Type.ARRAY,
       items: {
@@ -142,112 +176,85 @@ export const generateQuestions = async (topic: string, count: number, language: 
     },
   };
 
-  const modelsToTry = ["gemini-3.8-flash", "gemini-2.5-flash-lite"];
+  const modelsToTry = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"];
   const totalAttempts = Math.max(pool.length, 1);
   let lastError: any = null;
 
-  // 1. Try across all available API keys in the pool
   for (let attempt = 0; attempt < totalAttempts; attempt++) {
     const { client, keyIndex, totalKeys } = getNextClient(pool);
     const keyLabel = totalKeys > 1 ? `Key #${keyIndex + 1}/${totalKeys}` : "Default Key";
 
     for (const modelName of modelsToTry) {
       try {
-        console.log(`[Gemini] Attempting question generation with ${keyLabel} using model ${modelName}...`);
+        console.log(`[Gemini Fallback] Attempting with ${keyLabel} on ${modelName}...`);
         const response = await client.models.generateContent({
           model: modelName,
           contents: prompt,
           config,
         });
 
-        if (!response.text) {
-          throw new Error("AI returned an empty response. Trying fallback...");
+        if (response.text) {
+          const questions = JSON.parse(response.text.trim()) as Question[];
+          if (Array.isArray(questions) && questions.length > 0) {
+            console.log(`[Gemini Fallback] Success! Generated ${questions.length} questions`);
+            saveCachedQuestions(topic, language, difficulty, questions);
+            return questions;
+          }
         }
-
-        const jsonStr = response.text.trim();
-        const questions = JSON.parse(jsonStr) as Question[];
-        console.log(`[Gemini] Success! Generated ${questions.length} questions using ${keyLabel}`);
-
-        // Save into cache for future instant reuse
-        saveCachedQuestions(topic, language, difficulty, questions);
-        return questions;
-
       } catch (err: any) {
         lastError = err;
         const isQuota = isQuotaOrRateLimitError(err);
-        console.warn(`[Gemini] Error with ${keyLabel} on ${modelName}:`, err.message || err);
-
-        if (isQuota) {
-          console.warn(`[Gemini Pool] ${keyLabel} hit rate limit. Switching to next API key...`);
-          // Break model loop to switch immediately to the next API key in pool
-          break;
-        } else if (err instanceof SyntaxError) {
-          // Truncation or parse error, let's continue to next attempt or throw
-          break;
-        }
+        console.warn(`[Gemini Fallback] Error with ${keyLabel} on ${modelName}:`, err?.message || err);
+        if (isQuota) break; // rotate key
       }
     }
   }
 
-  // 2. If all keys were rate limited, check if we have cached questions as emergency fallback
-  const cached = getCachedQuestions(topic, language, difficulty);
-  if (cached && cached.length >= count) {
-    console.log(`[Gemini] Serving ${count} questions from offline cache due to rate limits`);
+  // 4. Return cached if available
+  if (cached && cached.length > 0) {
     return cached.slice(0, count);
   }
 
-  // 3. User friendly message if all keys are exhausted
-  console.error("All Gemini API keys failed:", lastError);
   if (isQuotaOrRateLimitError(lastError)) {
-    const keyCount = pool.length;
     throw new Error(
-      keyCount > 1
-        ? `सभी ${keyCount} Google AI Keys की फ़्री लिमिट (Rate Limit: 429) इस समय पूरी हो गई है। कृपया 1-2 मिनट रुककर पुनः प्रयास करें या Settings में अतिरिक्त API Keys जोड़ें।`
-        : `Google AI की फ्री लिमिट (Rate Limit: 429) पूरी हो गई है। आप Settings में 'GEMINI_API_KEY_2' और 'GEMINI_API_KEY_3' जोड़कर अपनी क्षमता 3 गुना बढ़ा सकते हैं!`
+      "Google AI की फ़्री लिमिट (Rate Limit: 429) इस समय पूरी हो गई है। कृपया 1-2 मिनट रुककर पुनः प्रयास करें।"
     );
   }
 
-  if (lastError instanceof SyntaxError) {
-    throw new Error("The response was truncated due to its large size. Please try again with a more specific topic or 50 questions for best results.");
-  }
-
-  throw new Error(lastError instanceof Error ? lastError.message : "Failed to generate test. Please check your connection.");
+  throw new Error(lastError instanceof Error ? lastError.message : "Failed to generate test. Please try again.");
 };
 
 export const generateAvatar = async (userName: string): Promise<string> => {
-  const pool = getApiKeyPool();
-  const prompt = `A professional, clean, minimalist 3D isometric avatar for a competitive exam aspirant named ${userName}. Style: Modern, tech-focused, vibrant colors (indigo/purple), studio lighting, high quality 3D render.`;
+  // Return a stylish SVG avatar data URI immediately as reliable fallback
+  const initials = (userName || 'User')
+    .split(' ')
+    .map(n => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2) || 'TT';
 
-  const totalAttempts = Math.max(pool.length, 1);
-  let lastErr: any = null;
+  const colors = [
+    ['#6366f1', '#a855f7'],
+    ['#3b82f6', '#06b6d4'],
+    ['#10b981', '#059669'],
+    ['#f59e0b', '#d97706'],
+    ['#ec4899', '#8b5cf6']
+  ];
+  const charCode = (userName || 'A').charCodeAt(0);
+  const [c1, c2] = colors[charCode % colors.length];
 
-  for (let attempt = 0; attempt < totalAttempts; attempt++) {
-    const { client } = getNextClient(pool);
-    try {
-      const response = await client.models.generateContent({
-        model: 'gemini-3.1-flash-lite-image',
-        contents: {
-          parts: [{ text: prompt }],
-        },
-        config: {
-          imageConfig: {
-            aspectRatio: "1:1",
-          },
-        },
-      });
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+    <defs>
+      <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="${c1}" />
+        <stop offset="100%" stop-color="${c2}" />
+      </linearGradient>
+    </defs>
+    <rect width="100" height="100" rx="30" fill="url(#grad)" />
+    <circle cx="50" cy="50" r="46" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="2"/>
+    <text x="50" y="58" font-family="system-ui, -apple-system, sans-serif" font-size="34" font-weight="900" fill="#ffffff" text-anchor="middle">${initials}</text>
+  </svg>`;
 
-      for (const part of response.candidates[0].content.parts) {
-        if (part.inlineData) {
-          return `data:image/png;base64,${part.inlineData.data}`;
-        }
-      }
-    } catch (err) {
-      lastErr = err;
-      console.warn("[Gemini Avatar] Key error, trying next key...", err);
-    }
-  }
-
-  console.error("Avatar Generation Error:", lastErr);
-  throw new Error("Failed to generate AI avatar. Please try again.");
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 };
 

@@ -45,7 +45,11 @@ import {
   Camera,
   Sparkles,
   UploadCloud,
-  Crown
+  Crown,
+  Sliders,
+  Clock,
+  Plus,
+  Minus
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -1024,49 +1028,38 @@ const AppContent: React.FC = () => {
   };
 
   // --- Test Logic ---
-  const startTest = async (topic: string, isPro: boolean, lang: 'English' | 'Hindi', difficulty: Difficulty) => {
+  const startTest = async (topic: string, count: number, lang: 'English' | 'Hindi', difficulty: Difficulty) => {
     if (!currentUser) return;
 
-    const fullTrialsCount = testResults.filter(r => r.total >= 50).length;
-    const quickTrialsCount = testResults.filter(r => r.total <= 10).length;
+    if (!topic || !topic.trim()) {
+      showAlert("Missing Topic", "Please enter an exam name or subject (e.g. SSC CGL Quant, Modern History) to generate questions.");
+      return;
+    }
+
+    const validatedCount = Math.min(Math.max(Number(count) || 10, 1), 100);
 
     // Restriction Logic
-    if (isPro) {
-      if (currentUser.subscription === SubscriptionStatus.FREE) {
-        showAlert("Pro Feature", "Full 100-question tests are exclusive to Pro subscribers. Please upgrade to unlock.");
-        navigate('/payment');
-        return;
-      }
-      if (currentUser.subscription === SubscriptionStatus.PENDING) {
-        showAlert("Verification Pending", "Your payment is currently being verified by our team. Please wait for approval to access full 100-question tests.");
-        return;
-      }
-    } else {
-      // For Quick Test, limit to 2 trials using the trialsUsed counter
-      if (currentUser.subscription === SubscriptionStatus.FREE && (currentUser.trialsUsed || 0) >= 2) {
-        showAlert("Trial Limit Reached", "You have used your 2 free Quick Test trials. Please upgrade to Pro for unlimited access.");
-        navigate('/payment');
-        return;
-      }
+    if (currentUser.subscription === SubscriptionStatus.PENDING) {
+      showAlert("Verification Pending", "Your payment is currently being verified by our team. Please wait for approval.");
+      return;
     }
 
-    const count = isPro ? 100 : (currentUser.subscription === SubscriptionStatus.PRO ? 50 : 5);
-    if (count === 100) {
-      setLoadingMessage('Generating 100 questions... This usually takes 45-60 seconds. Please do not close this window.');
-    } else if (count === 50) {
-      setLoadingMessage('Generating 50 questions... This will take a few moments.');
-    } else {
-      setLoadingMessage('Starting your quick test...');
+    if (currentUser.subscription === SubscriptionStatus.FREE && (currentUser.trialsUsed || 0) >= 2) {
+      showAlert("Trial Limit Reached", "You have used your 2 free test trials. Please upgrade to Pro for unlimited mock tests with custom question counts.");
+      navigate('/payment');
+      return;
     }
+
+    setLoadingMessage(`Generating ${validatedCount} questions on "${topic}" in ${lang}... Please do not close this window.`);
     
     setIsLoadingWithRef(true);
     setError(null);
     try {
-      const questions = await generateQuestions(topic, count, lang, difficulty);
-      setCurrentTest({ topic, questions, isPro, language: lang });
+      const questions = await generateQuestions(topic, validatedCount, lang, difficulty);
+      setCurrentTest({ topic, questions, isPro: true, language: lang });
       setUserAnswers(new Array(questions.length).fill(-1));
       setActiveQuestionIndex(0);
-      setTimeLeft(isPro ? 50 * 60 : 0);
+      setTimeLeft(validatedCount * 60); // 1 minute per question
       navigate('/test');
     } catch (err: any) {
       console.error('Test Generation Error:', err);
@@ -2077,7 +2070,7 @@ interface DashboardProps {
   appConfig: AppConfig;
   testResults: TestResult[];
   isLoading: boolean;
-  startTest: (topic: string, isPro: boolean, lang: 'English' | 'Hindi', diff: Difficulty) => Promise<void>;
+  startTest: (topic: string, count: number, lang: 'English' | 'Hindi', diff: Difficulty) => Promise<void>;
   navigate: any;
 }
 
@@ -2085,6 +2078,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
   const [topic, setTopic] = useState('');
   const [testLanguage, setTestLanguage] = useState<'English' | 'Hindi'>('English');
   const [testDifficulty, setTestDifficulty] = useState<Difficulty>('Medium');
+  const [selectedCount, setSelectedCount] = useState<number>(10);
+  const [customInput, setCustomInput] = useState<string>('10');
   
   // Filter States
   const [topicSearch, setTopicSearch] = useState('');
@@ -2152,7 +2147,7 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
               <h3 className="text-2xl font-black flex items-center justify-center md:justify-start gap-3 text-white">
                 Upgrade to Pro <span className="text-[10px] py-1 px-3 bg-indigo-500 rounded-full text-white font-black italic tracking-widest">HOT</span>
               </h3>
-              <p className="text-slate-400 font-medium">Unlock unlimited 100-question tests with timer for just ₹{appConfig.subscriptionPrice}/mo.</p>
+              <p className="text-slate-400 font-medium">Unlock unlimited mock tests with custom question counts & timer for just ₹{appConfig.subscriptionPrice}/mo.</p>
             </div>
             <button 
               onClick={() => navigate('/payment')}
@@ -2222,38 +2217,125 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
                   </div>
                 </div>
               </div>
+
+              {/* Number of Questions Selector (User Custom Selection) */}
+              <div className="p-5 glass rounded-2xl border border-white/5 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Sliders size={16} className="text-indigo-400" />
+                    <span className="text-xs font-black uppercase tracking-widest text-white">
+                      Questions Count / प्रश्नों की संख्या:
+                    </span>
+                    <span className="text-sm font-black text-indigo-400 bg-indigo-500/10 px-2.5 py-0.5 rounded-lg border border-indigo-500/20">
+                      {selectedCount} Qs
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-xs text-slate-400">
+                    <Clock size={14} className="text-indigo-400" />
+                    <span>Duration: <strong className="text-white">~{selectedCount} Mins</strong> (1 min/Q)</span>
+                  </div>
+                </div>
+
+                {/* Quick Presets */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {[5, 10, 15, 20, 25, 30, 50, 100].map(count => (
+                    <button
+                      key={count}
+                      type="button"
+                      onClick={() => {
+                        setSelectedCount(count);
+                        setCustomInput(String(count));
+                      }}
+                      className={cn(
+                        "px-3.5 py-1.5 rounded-xl text-xs font-black transition-all",
+                        selectedCount === count 
+                          ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/30 scale-105" 
+                          : "bg-white/5 text-slate-400 hover:text-white hover:bg-white/10"
+                      )}
+                    >
+                      {count} Qs
+                    </button>
+                  ))}
+                </div>
+
+                {/* Custom Count Stepper & Input */}
+                <div className="flex items-center justify-between pt-2 border-t border-white/5 text-xs text-slate-400">
+                  <span className="font-semibold">Or enter custom count (1-100):</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = Math.max(1, selectedCount - 5);
+                        setSelectedCount(next);
+                        setCustomInput(String(next));
+                      }}
+                      className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white transition-colors"
+                      title="Decrease by 5"
+                    >
+                      <Minus size={14} />
+                    </button>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={customInput}
+                      onChange={(e) => {
+                        setCustomInput(e.target.value);
+                        const val = parseInt(e.target.value, 10);
+                        if (!isNaN(val) && val >= 1 && val <= 100) {
+                          setSelectedCount(val);
+                        }
+                      }}
+                      onBlur={() => {
+                        let val = parseInt(customInput, 10);
+                        if (isNaN(val) || val < 1) val = 5;
+                        if (val > 100) val = 100;
+                        setSelectedCount(val);
+                        setCustomInput(String(val));
+                      }}
+                      className="w-16 py-1 px-2 text-center bg-white/5 border border-white/10 rounded-lg text-white font-black text-sm focus:border-indigo-500 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = Math.min(100, selectedCount + 5);
+                        setSelectedCount(next);
+                        setCustomInput(String(next));
+                      }}
+                      className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white transition-colors"
+                      title="Increase by 5"
+                    >
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-5 pt-4">
-              <button 
-                onClick={() => navigate('/multiplayer')}
-                className="w-full py-5 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 hover:from-indigo-500/20 hover:to-purple-500/20 rounded-2xl font-black text-white border border-indigo-500/20 shadow-2xl shadow-indigo-500/10 flex items-center justify-center gap-3 transition-all active:scale-95 group mb-4"
-              >
-                <Users size={24} className="group-hover:rotate-12 transition-transform text-indigo-400" /> 
-                <span className="text-lg">Test With <span className="gradient-text">Friends</span> 🔥</span>
-              </button>
-            </div>
-
-            <div className="flex flex-col sm:flex-row gap-5 pt-4">
+            {/* Test Action Buttons */}
+            <div className="space-y-4 pt-2">
               <button 
                 disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && (currentUser.trialsUsed || 0) >= 2) || (currentUser?.subscription === SubscriptionStatus.PENDING)}
-                onClick={() => startTest(topic, false, testLanguage, testDifficulty)}
-                className="flex-1 py-5 glass hover:bg-white/10 rounded-2xl font-black text-slate-300 border border-white/10 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
+                onClick={() => startTest(topic, selectedCount, testLanguage, testDifficulty)}
+                className="w-full py-5 bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-600 hover:from-indigo-600 hover:to-purple-700 rounded-2xl font-black text-white text-lg shadow-xl shadow-indigo-500/25 transition-all active:scale-[0.98] disabled:opacity-50 disabled:grayscale flex items-center justify-center gap-3 group"
               >
-                {isLoading ? <Loader2 className="animate-spin" /> : <Zap size={20} />}
-                {isLoading ? 'Generating...' : 
-                 (currentUser?.subscription === SubscriptionStatus.FREE ? `5-Q Quick Test (${Math.max(0, 2 - (currentUser.trialsUsed || 0))} left)` : `50-Q Sprint Test`)}
+                {isLoading ? <Loader2 className="animate-spin" size={22} /> : <Zap size={22} className="text-yellow-400 fill-yellow-400 group-hover:scale-110 transition-transform" />}
+                <span>
+                  {isLoading ? `AI Generating ${selectedCount} Questions...` : 
+                   currentUser?.subscription === SubscriptionStatus.PENDING ? `Verification Pending` : 
+                   (currentUser?.subscription === SubscriptionStatus.FREE && (currentUser.trialsUsed || 0) >= 2) ? `Trial Limit Reached (Upgrade to Pro)` :
+                   currentUser?.subscription === SubscriptionStatus.FREE ? `Start Mock Test (${selectedCount} Questions) • Trial (${Math.max(0, 2 - (currentUser.trialsUsed || 0))} left)` :
+                   `Start Mock Test (${selectedCount} Questions)`}
+                </span>
               </button>
+
               <button 
-                disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.PENDING)}
-                onClick={() => startTest(topic, true, testLanguage, testDifficulty)}
-                className="flex-1 py-5 bg-indigo-500 hover:bg-indigo-600 rounded-2xl font-black text-white shadow-xl shadow-indigo-500/30 transition-all active:scale-95 disabled:opacity-50 disabled:bg-slate-800 disabled:text-slate-500 flex items-center justify-center gap-3"
+                onClick={() => navigate('/multiplayer')}
+                className="w-full py-4 bg-gradient-to-r from-indigo-500/10 to-purple-500/10 hover:from-indigo-500/20 hover:to-purple-500/20 rounded-2xl font-black text-white border border-indigo-500/20 shadow-lg shadow-indigo-500/5 flex items-center justify-center gap-3 transition-all active:scale-95 group"
               >
-                {isLoading ? <Loader2 className="animate-spin" /> : <Trophy size={20} />}
-                {isLoading ? 'Generating...' : 
-                 (currentUser?.subscription === SubscriptionStatus.FREE ? `Full 100-Q (Pro Only)` : 
-                  currentUser?.subscription === SubscriptionStatus.PENDING ? `Verification Pending` : 
-                  `Full 100-Q Test`)}
+                <Users size={20} className="group-hover:rotate-12 transition-transform text-indigo-400" /> 
+                <span className="text-base">Test With <span className="gradient-text">Friends</span> 🔥</span>
               </button>
             </div>
           </div>

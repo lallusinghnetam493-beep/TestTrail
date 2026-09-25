@@ -4,6 +4,7 @@ import cors from "cors";
 import Razorpay from "razorpay";
 import crypto from "crypto";
 import fs from "fs";
+import { GoogleGenAI, Type } from "@google/genai";
 
 // Import Client SDK for server-side work to avoid "Default Credentials" error in AI Studio
 import { initializeApp as initializeClientApp } from "firebase/app";
@@ -71,6 +72,203 @@ async function startServer() {
 
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
+  });
+
+  // --- GEMINI QUESTION GENERATION API ---
+  function getServerApiKeyPool(): string[] {
+    const rawSources = [
+      process.env.GEMINI_API_KEY || '',
+      (process.env as any).GEMINI_API_KEY_2 || '',
+      (process.env as any).GEMINI_API_KEY_3 || '',
+      process.env.API_KEY || '',
+    ];
+
+    const pool: string[] = [];
+    for (const raw of rawSources) {
+      if (!raw) continue;
+      const parts = raw.split(/[\n,;]+/).map(k => k.trim()).filter(Boolean);
+      for (const key of parts) {
+        if (
+          key && 
+          key.length > 15 && 
+          !pool.includes(key) && 
+          !key.includes('MISSING') &&
+          !key.startsWith('AIzaSyBe32')
+        ) {
+          pool.push(key);
+        }
+      }
+    }
+    return pool;
+  }
+
+  async function generateBatch(
+    topic: string, 
+    count: number, 
+    language: string, 
+    difficulty: string, 
+    pool: string[], 
+    batchIndex: number, 
+    focusDescription: string
+  ): Promise<any[]> {
+    const modelsToTry = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"];
+    let lastErr: any = null;
+
+    const keyOffset = batchIndex % Math.max(pool.length, 1);
+
+    for (let keyAttempt = 0; keyAttempt < Math.max(pool.length, 1); keyAttempt++) {
+      const activeKey = pool[(keyOffset + keyAttempt) % pool.length];
+      const client = new GoogleGenAI({
+        apiKey: activeKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
+
+      for (const modelName of modelsToTry) {
+        try {
+          const prompt = `Generate exactly ${count} high-quality, exam-standard multiple choice questions on the topic "${topic}" in ${language}.
+Focus/Sub-dimension for this batch: ${focusDescription}.
+Difficulty Level: ${difficulty}.
+Requirements:
+1. Each question must have exactly 4 options.
+2. Only 1 option must be correct (correctAnswerIndex: 0, 1, 2, or 3).
+3. Provide a clear, factual explanation (1-2 sentences) in ${language}.
+4. Provide a subject/category tag in ${language}.
+5. Ensure 100% factual accuracy.`;
+
+          const response = await client.models.generateContent({
+            model: modelName,
+            contents: prompt,
+            config: {
+              responseMimeType: "application/json",
+              responseSchema: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    id: { type: Type.INTEGER },
+                    text: { type: Type.STRING },
+                    options: {
+                      type: Type.ARRAY,
+                      items: { type: Type.STRING },
+                      minItems: 4,
+                      maxItems: 4
+                    },
+                    correctAnswerIndex: { type: Type.INTEGER },
+                    explanation: { type: Type.STRING },
+                    subject: { type: Type.STRING }
+                  },
+                  required: ["id", "text", "options", "correctAnswerIndex", "explanation", "subject"]
+                }
+              }
+            }
+          });
+
+          if (response.text) {
+            const parsed = JSON.parse(response.text);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              return parsed;
+            }
+          }
+        } catch (err: any) {
+          lastErr = err;
+          const msg = String(err?.message || err);
+          console.warn(`[Gemini Server] Batch ${batchIndex} attempt failed with model ${modelName}:`, msg.slice(0, 120));
+          // If model is 503 (busy) or 404 (deprecated), try next model
+          // If 429 or 403, switch key
+          if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("403") || msg.includes("PERMISSION_DENIED")) {
+            break;
+          }
+        }
+      }
+    }
+
+    throw lastErr || new Error("Failed to generate batch of questions.");
+  }
+
+  app.post("/api/questions/generate", async (req, res) => {
+    try {
+      const { topic, count, language = "English", difficulty = "Medium" } = req.body;
+      if (!topic || typeof topic !== "string" || !topic.trim()) {
+        return res.status(400).json({ error: "Topic is required" });
+      }
+
+      const totalCount = Math.min(Math.max(parseInt(String(count), 10) || 10, 1), 100);
+      const pool = getServerApiKeyPool();
+
+      if (pool.length === 0) {
+        return res.status(500).json({ 
+          error: "Gemini API key is not configured. Please set GEMINI_API_KEY in environment secrets." 
+        });
+      }
+
+      console.log(`[Gemini Server] Generating ${totalCount} questions on "${topic}" (${language}, ${difficulty}) using ${pool.length} active keys...`);
+
+      // Determine batch plan
+      const batchFoci = [
+        "Core foundational concepts, definitions, origins, and standard high-yield questions.",
+        "Applied practice, real-world case scenarios, recent updates, and operational nuances.",
+        "Comparative questions, exceptions, timelines, chronological sequences, and data/factual points.",
+        "Analytical questions, multi-statement evaluations, and critical problem solving.",
+        "Comprehensive synthesis, mixed-topic coverage, and challenging conceptual integration."
+      ];
+
+      const batchSizes: number[] = [];
+      let rem = totalCount;
+      while (rem > 0) {
+        const size = Math.min(rem, 20);
+        batchSizes.push(size);
+        rem -= size;
+      }
+
+      // Execute batches (in parallel for fast response)
+      const batchPromises = batchSizes.map((size, idx) => 
+        generateBatch(topic, size, language, difficulty, pool, idx, batchFoci[idx % batchFoci.length])
+      );
+
+      const batchResults = await Promise.all(batchPromises);
+      const rawQuestions: any[] = [];
+      for (const batch of batchResults) {
+        rawQuestions.push(...batch);
+      }
+
+      // Deduplicate questions by question text to ensure variety
+      const seen = new Set<string>();
+      const uniqueQuestions: any[] = [];
+      for (const q of rawQuestions) {
+        const normalized = (q.text || "").toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (normalized && !seen.has(normalized)) {
+          seen.add(normalized);
+          uniqueQuestions.push(q);
+        } else if (!normalized) {
+          uniqueQuestions.push(q);
+        }
+      }
+
+      // If deduplication reduced count below requested, append from remaining
+      const finalQuestions = (uniqueQuestions.length >= totalCount ? uniqueQuestions : rawQuestions)
+        .slice(0, totalCount)
+        .map((q, idx) => ({
+          ...q,
+          id: idx + 1
+        }));
+
+      console.log(`[Gemini Server] Successfully created ${finalQuestions.length} questions for "${topic}"`);
+      return res.json({ success: true, questions: finalQuestions });
+    } catch (err: any) {
+      console.error("[Gemini Server] Generation Error:", err);
+      const msg = err?.message || String(err);
+      let userFriendly = "Failed to generate test. Please try again.";
+      if (msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
+        userFriendly = "Google AI की फ़्री लिमिट (Rate Limit: 429) इस समय पूरी हो गई है। कृपया 1-2 मिनट रुककर पुनः प्रयास करें।";
+      } else if (msg.includes("503") || msg.includes("UNAVAILABLE")) {
+        userFriendly = "Google AI सर्वर पर इस समय भारी ट्रैफ़िक है। कृपया कुछ पलों बाद पुनः प्रयास करें।";
+      }
+      return res.status(500).json({ error: userFriendly, details: msg });
+    }
   });
 
   app.post("/api/payment/order", async (req, res) => {
