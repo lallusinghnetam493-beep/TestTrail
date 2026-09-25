@@ -238,11 +238,6 @@ const TestInterface = ({
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-2">
               <div className="text-xs font-black text-indigo-400 uppercase tracking-widest">Question {activeQuestionIndex + 1}</div>
-              {q.subject && (
-                <span className="text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 max-w-[200px] truncate">
-                  {q.subject}
-                </span>
-              )}
             </div>
             <h2 className="text-xl md:text-2xl font-bold leading-relaxed">{q.text}</h2>
           </div>
@@ -2068,24 +2063,12 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResults, isLoading, startTest, navigate }) => {
-  const [topic, setTopic] = useState('General Knowledge (सामान्य ज्ञान)');
+  const [topic, setTopic] = useState('');
+  const [topicError, setTopicError] = useState<string | null>(null);
   const [testLanguage, setTestLanguage] = useState<'English' | 'Hindi'>('English');
   const [testDifficulty, setTestDifficulty] = useState<Difficulty>('Medium');
   const [selectedCount, setSelectedCount] = useState<number>(10);
   const [customInput, setCustomInput] = useState<string>('10');
-
-  const POPULAR_TOPICS = [
-    { label: '🌟 सामान्य ज्ञान (GK)', value: 'General Knowledge (सामान्य ज्ञान)' },
-    { label: '🏛️ भारतीय इतिहास', value: 'Indian History (भारतीय इतिहास)' },
-    { label: '📜 संविधान व राजव्यवस्था', value: 'Indian Polity & Constitution (भारतीय संविधान)' },
-    { label: '🔬 सामान्य विज्ञान', value: 'General Science (सामान्य विज्ञान)' },
-    { label: '🌍 भारत व विश्व का भूगोल', value: 'Geography (भूगोल)' },
-    { label: '💼 SSC CGL / CHSL', value: 'SSC CGL / CHSL Mock Test' },
-    { label: '🚆 रेलवे RRB NTPC', value: 'Railway RRB NTPC' },
-    { label: '📰 Current Affairs 2026', value: 'Current Affairs 2026 (समसामयिकी)' },
-    { label: '🧮 गणित (Maths)', value: 'Quantitative Aptitude (गणित)' },
-    { label: '🧠 तर्कशक्ति (Reasoning)', value: 'Reasoning Ability (तर्कशक्ति)' },
-  ];
   
   // Filter States
   const [topicSearch, setTopicSearch] = useState('');
@@ -2168,8 +2151,8 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
         <div className="lg:col-span-2 space-y-8">
           <div className="glass p-10 rounded-[3rem] space-y-8 shadow-2xl shadow-indigo-500/5 border-white/10">
             <div className="space-y-3">
-              <h3 className="text-3xl font-black tracking-tight text-white">New Mock Test</h3>
-              <p className="text-slate-400 font-medium">What are we studying today? Enter exam name or subject.</p>
+              <h3 className="text-3xl font-black tracking-tight text-white">विषय या परीक्षा सर्च करें</h3>
+              <p className="text-slate-400 font-medium">आप जो भी विषय या टॉपिक यहाँ टाइप करेंगे, AI ठीक उसी पर प्रश्न तैयार करेगा।</p>
             </div>
             
             <div className="space-y-6">
@@ -2180,14 +2163,30 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
                 <input 
                   type="text"
                   value={topic}
-                  onChange={e => setTopic(e.target.value)}
-                  placeholder="e.g. General Knowledge, Indian History, SSC CGL..."
+                  onChange={e => {
+                    setTopic(e.target.value);
+                    if (topicError) setTopicError(null);
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      if (!topic.trim()) {
+                        setTopicError('कृपया पहले जिस विषय पर टेस्ट देना चाहते हैं, उसे यहाँ सर्च/टाइप करें!');
+                        return;
+                      }
+                      setTopicError(null);
+                      startTest(topic.trim(), selectedCount, testLanguage, testDifficulty);
+                    }
+                  }}
+                  placeholder="यहाँ सर्च करें (उदा. भौतिक विज्ञान, SSC CGL, भारतीय संविधान, Reasoning, जीव विज्ञान...)"
                   className="w-full pl-16 pr-14 py-6 bg-white/[0.03] border border-white/10 rounded-[2rem] focus:outline-none focus:border-indigo-500/50 text-xl transition-all font-bold text-white placeholder:text-slate-600"
                 />
                 {topic && (
                   <button
                     type="button"
-                    onClick={() => setTopic('')}
+                    onClick={() => {
+                      setTopic('');
+                      setTopicError(null);
+                    }}
                     className="absolute right-5 top-1/2 -translate-y-1/2 p-2 rounded-full hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
                     title="Clear topic"
                   >
@@ -2196,29 +2195,12 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
                 )}
               </div>
 
-              {/* Quick Topic Chips */}
-              <div className="space-y-2 px-1">
-                <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                  <Zap size={13} className="text-yellow-400" /> लोकप्रिय विषय (One-Tap Select):
-                </span>
-                <div className="flex flex-wrap gap-2">
-                  {POPULAR_TOPICS.map(item => (
-                    <button
-                      key={item.value}
-                      type="button"
-                      onClick={() => setTopic(item.value)}
-                      className={cn(
-                        "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border",
-                        topic === item.value 
-                          ? "bg-indigo-500 text-white border-indigo-400 shadow-lg shadow-indigo-500/30 scale-105" 
-                          : "bg-white/[0.04] text-slate-300 border-white/5 hover:bg-white/10 hover:text-white hover:border-white/20"
-                      )}
-                    >
-                      {item.label}
-                    </button>
-                  ))}
+              {topicError && (
+                <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-2xl text-red-400 text-sm font-bold flex items-center gap-3">
+                  <AlertCircle size={18} className="shrink-0" />
+                  <span>{topicError}</span>
                 </div>
-              </div>
+              )}
 
               <div className="flex flex-col md:flex-row md:items-center gap-6 px-2">
                 <div className="flex items-center gap-4">
@@ -2357,7 +2339,14 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
             <div className="space-y-4 pt-2">
               <button 
                 disabled={isLoading}
-                onClick={() => startTest(topic, selectedCount, testLanguage, testDifficulty)}
+                onClick={() => {
+                  if (!topic.trim()) {
+                    setTopicError('कृपया पहले जिस विषय पर टेस्ट देना चाहते हैं, उसे ऊपर सर्च बॉक्स में लिखें!');
+                    return;
+                  }
+                  setTopicError(null);
+                  startTest(topic.trim(), selectedCount, testLanguage, testDifficulty);
+                }}
                 className="w-full py-5 bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-600 hover:from-indigo-600 hover:to-purple-700 rounded-2xl font-black text-white text-lg shadow-xl shadow-indigo-500/25 transition-all active:scale-[0.98] disabled:opacity-50 disabled:grayscale flex items-center justify-center gap-3 group"
               >
                 {isLoading ? <Loader2 className="animate-spin" size={22} /> : <Zap size={22} className="text-yellow-400 fill-yellow-400 group-hover:scale-110 transition-transform" />}

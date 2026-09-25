@@ -465,14 +465,26 @@ Output ONLY a valid JSON array of objects according to the schema.`;
       for (const modelName of modelsToTry) {
         try {
           console.log(`[Gemini Server] Requesting ${count} Qs on "${topic}" using Key #${kIdx + 1} with ${modelName}...`);
-          const response = await client.models.generateContent({
-            model: modelName,
-            contents: prompt,
-            config: schemaConfig
-          });
+          let responseText = '';
+          try {
+            const response = await client.models.generateContent({
+              model: modelName,
+              contents: prompt,
+              config: schemaConfig
+            });
+            responseText = response.text || '';
+          } catch (schemaErr: any) {
+            console.warn(`[Gemini Server] Schema mode failed on ${modelName}, trying standard json:`, schemaErr?.message || schemaErr);
+            const fallbackResponse = await client.models.generateContent({
+              model: modelName,
+              contents: `${prompt}\nOUTPUT STRICTLY A VALID JSON ARRAY OF OBJECTS ONLY.`,
+              config: { responseMimeType: "application/json" }
+            });
+            responseText = fallbackResponse.text || '';
+          }
 
-          if (response.text) {
-            const parsed = extractJsonArray(response.text);
+          if (responseText) {
+            const parsed = extractJsonArray(responseText);
             if (Array.isArray(parsed) && parsed.length > 0) {
               console.log(`[Gemini Server] Success! Model ${modelName} returned ${parsed.length} questions for "${topic}".`);
               return parsed;
