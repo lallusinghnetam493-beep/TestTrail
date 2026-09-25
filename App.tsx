@@ -236,7 +236,14 @@ const TestInterface = ({
           className="flex-1 glass p-8 rounded-[2rem] space-y-8 shadow-[0_0_50px_rgba(99,102,241,0.1)]"
         >
           <div className="space-y-4">
-            <div className="text-xs font-black text-indigo-400 uppercase tracking-widest">Question {activeQuestionIndex + 1}</div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-black text-indigo-400 uppercase tracking-widest">Question {activeQuestionIndex + 1}</div>
+              {q.subject && (
+                <span className="text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 max-w-[200px] truncate">
+                  {q.subject}
+                </span>
+              )}
+            </div>
             <h2 className="text-xl md:text-2xl font-bold leading-relaxed">{q.text}</h2>
           </div>
 
@@ -2175,8 +2182,18 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
                   value={topic}
                   onChange={e => setTopic(e.target.value)}
                   placeholder="e.g. General Knowledge, Indian History, SSC CGL..."
-                  className="w-full pl-16 pr-6 py-6 bg-white/[0.03] border border-white/10 rounded-[2rem] focus:outline-none focus:border-indigo-500/50 text-xl transition-all font-bold text-white placeholder:text-slate-600"
+                  className="w-full pl-16 pr-14 py-6 bg-white/[0.03] border border-white/10 rounded-[2rem] focus:outline-none focus:border-indigo-500/50 text-xl transition-all font-bold text-white placeholder:text-slate-600"
                 />
+                {topic && (
+                  <button
+                    type="button"
+                    onClick={() => setTopic('')}
+                    className="absolute right-5 top-1/2 -translate-y-1/2 p-2 rounded-full hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                    title="Clear topic"
+                  >
+                    <X size={20} />
+                  </button>
+                )}
               </div>
 
               {/* Quick Topic Chips */}

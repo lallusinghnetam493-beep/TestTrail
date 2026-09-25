@@ -71,49 +71,28 @@ function isQuotaOrRateLimitError(error: any): boolean {
   );
 }
 
-// Lightweight cache to reuse generated questions and save API quota
-const CACHE_PREFIX = "tt_cached_topic_";
-function getCachedQuestions(topic: string, language: string, difficulty: Difficulty): Question[] | null {
-  try {
-    const key = `${CACHE_PREFIX}${topic.toLowerCase().trim()}_${language}_${difficulty}`;
-    const item = localStorage.getItem(key);
-    if (!item) return null;
-    const parsed = JSON.parse(item);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      console.log(`[Cache Hit] Reusing ${parsed.length} cached questions for "${topic}"`);
-      return parsed;
+// Clear any legacy cached questions from localStorage to ensure users always get fresh, accurate tests
+try {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith("tt_cached_topic_")) {
+        keysToRemove.push(k);
+      }
     }
-  } catch {
-    // Ignore cache parse errors
+    keysToRemove.forEach(k => localStorage.removeItem(k));
   }
-  return null;
-}
-
-function saveCachedQuestions(topic: string, language: string, difficulty: Difficulty, questions: Question[]) {
-  try {
-    if (!questions || questions.length === 0) return;
-    const key = `${CACHE_PREFIX}${topic.toLowerCase().trim()}_${language}_${difficulty}`;
-    localStorage.setItem(key, JSON.stringify(questions));
-  } catch {
-    // LocalStorage full or private mode, safely ignore
-  }
-}
+} catch {}
 
 export const generateQuestions = async (topic: string, count: number, language: string, difficulty: Difficulty): Promise<Question[]> => {
   const safeTopic = (topic && topic.trim()) ? topic.trim() : "General Knowledge (सामान्य ज्ञान)";
   const safeCount = Math.min(Math.max(Number(count) || 10, 1), 100);
 
-  // 1. Check local cache first for instant retrieval
-  const cached = getCachedQuestions(safeTopic, language, difficulty);
-  if (cached && cached.length >= safeCount) {
-    console.log(`[Gemini] Serving ${safeCount} questions directly from offline cache.`);
-    return cached.slice(0, safeCount);
-  }
-
-  // 2. Call server API endpoint (recommended approach for full-stack, handles multi-key rotation and batching)
+  // 1. Always call the server API endpoint for fresh, topic-specific, AI-generated questions
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      console.log(`[Gemini Client] Requesting ${safeCount} questions for "${safeTopic}" (attempt ${attempt + 1})...`);
+      console.log(`[Gemini Client] Generating ${safeCount} fresh questions for "${safeTopic}" (${language}, ${difficulty})...`);
       const resp = await fetch("/api/questions/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -123,39 +102,29 @@ export const generateQuestions = async (topic: string, count: number, language: 
       if (resp.ok) {
         const data = await resp.json();
         if (data?.success && Array.isArray(data.questions) && data.questions.length > 0) {
-          console.log(`[Gemini Client] Server generated ${data.questions.length} questions successfully!`);
-          saveCachedQuestions(safeTopic, language, difficulty, data.questions);
+          console.log(`[Gemini Client] Server delivered ${data.questions.length} questions tailored to "${safeTopic}"`);
           return data.questions;
         }
       }
     } catch (netErr) {
       console.warn(`[Gemini Client] Server call attempt ${attempt + 1} failed:`, netErr);
       if (attempt === 0) {
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 800));
       }
     }
   }
 
-  // 3. Fallback: Direct client-side generation using working model pool if server was unreachable
+  // 2. Direct fallback using Gemini client if server proxy was completely unreachable
   const pool = getApiKeyPool();
   console.log(`[Gemini Client Fallback] Active API key count: ${pool.length}`);
 
-  const systemInstruction = `You are an expert exam paper setter for Indian government exams (UPSC, SSC CGL, Banking, Railway, SBI PO, etc.).
-Your task is to generate high-quality, factually accurate multiple choice questions.
-
-STRICT CONSTRAINTS:
-1. Quantity: You MUST generate EXACTLY the number of questions requested (${safeCount}).
-2. Language: All content MUST be in ${language}.
-3. Difficulty: Adaptive ${difficulty} level.
-4. Accuracy: All facts must be 100% accurate.
-5. Explanations: Provide a CLEAR, HELPFUL explanation for the correct answer.
-6. Subject: Categorize each question into a relevant subject.
-7. Format: Return ONLY a valid JSON array of objects.`;
-
-  const prompt = `Generate exactly ${safeCount} multiple choice questions about "${safeTopic}" in ${language}. For each question, include 'subject' and 'explanation'. Difficulty: ${difficulty}.`;
+  const prompt = `CRITICAL DIRECTIVE: You are an expert examination paper setter.
+Generate exactly ${safeCount} multiple choice questions strictly and specifically on the topic: "${safeTopic}" in ${language}.
+Difficulty level: ${difficulty}.
+All 4 options, explanations, and questions must be in ${language}.
+Format as JSON array with properties: id (number), text (string), options (4 strings), correctAnswerIndex (0-3), explanation (string), subject ("${safeTopic}").`;
 
   const config = {
-    systemInstruction,
     responseMimeType: "application/json",
     responseSchema: {
       type: Type.ARRAY,
@@ -179,7 +148,7 @@ STRICT CONSTRAINTS:
     },
   };
 
-  const modelsToTry = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest"];
+  const modelsToTry = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.1-flash-lite"];
   const totalAttempts = Math.max(pool.length, 1);
   let lastError: any = null;
 
@@ -200,28 +169,20 @@ STRICT CONSTRAINTS:
           let clean = response.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
           const questions = JSON.parse(clean) as Question[];
           if (Array.isArray(questions) && questions.length > 0) {
-            console.log(`[Gemini Fallback] Success! Generated ${questions.length} questions`);
-            saveCachedQuestions(safeTopic, language, difficulty, questions);
+            console.log(`[Gemini Fallback] Success! Generated ${questions.length} questions for "${safeTopic}"`);
             return questions;
           }
         }
       } catch (err: any) {
         lastError = err;
-        const isQuota = isQuotaOrRateLimitError(err);
         console.warn(`[Gemini Fallback] Error with ${keyLabel} on ${modelName}:`, err?.message || err);
-        if (isQuota) break; // rotate key
       }
     }
   }
 
-  // 4. Return cached if available
-  if (cached && cached.length > 0) {
-    return cached.slice(0, safeCount);
-  }
-
   if (isQuotaOrRateLimitError(lastError)) {
     throw new Error(
-      "Google AI की फ़्री लिमिट (Rate Limit: 429) इस समय पूरी हो गई है। कृपया 1-2 मिनट रुककर पुनः प्रयास करें।"
+      "Google AI की सीमा इस समय व्यस्त है। कृपया कुछ सेकंड रुककर पुनः प्रयास करें।"
     );
   }
 
