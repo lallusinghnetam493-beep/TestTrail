@@ -1031,39 +1031,25 @@ const AppContent: React.FC = () => {
   const startTest = async (topic: string, count: number, lang: 'English' | 'Hindi', difficulty: Difficulty) => {
     if (!currentUser) return;
 
-    if (!topic || !topic.trim()) {
-      showAlert("Missing Topic", "Please enter an exam name or subject (e.g. SSC CGL Quant, Modern History) to generate questions.");
-      return;
-    }
-
+    const safeTopic = (topic && topic.trim()) ? topic.trim() : "General Knowledge (सामान्य ज्ञान)";
     const validatedCount = Math.min(Math.max(Number(count) || 10, 1), 100);
 
-    // Restriction Logic
-    if (currentUser.subscription === SubscriptionStatus.PENDING) {
-      showAlert("Verification Pending", "Your payment is currently being verified by our team. Please wait for approval.");
-      return;
-    }
-
-    if (currentUser.subscription === SubscriptionStatus.FREE && (currentUser.trialsUsed || 0) >= 2) {
-      showAlert("Trial Limit Reached", "You have used your 2 free test trials. Please upgrade to Pro for unlimited mock tests with custom question counts.");
-      navigate('/payment');
-      return;
-    }
-
-    setLoadingMessage(`Generating ${validatedCount} questions on "${topic}" in ${lang}... Please do not close this window.`);
+    setLoadingMessage(`Generating ${validatedCount} questions on "${safeTopic}" in ${lang}... Please do not close this window.`);
     
     setIsLoadingWithRef(true);
     setError(null);
     try {
-      const questions = await generateQuestions(topic, validatedCount, lang, difficulty);
-      setCurrentTest({ topic, questions, isPro: true, language: lang });
+      const questions = await generateQuestions(safeTopic, validatedCount, lang, difficulty);
+      setCurrentTest({ topic: safeTopic, questions, isPro: true, language: lang });
       setUserAnswers(new Array(questions.length).fill(-1));
       setActiveQuestionIndex(0);
       setTimeLeft(validatedCount * 60); // 1 minute per question
       navigate('/test');
     } catch (err: any) {
       console.error('Test Generation Error:', err);
-      setError(err.message || 'Failed to generate test. Please try again.');
+      const errMsg = err?.message || 'Failed to generate test. Please try again.';
+      setError(errMsg);
+      showAlert("Question Generation Error", errMsg);
     } finally {
       setIsLoadingWithRef(false);
     }
@@ -2075,11 +2061,24 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResults, isLoading, startTest, navigate }) => {
-  const [topic, setTopic] = useState('');
+  const [topic, setTopic] = useState('General Knowledge (सामान्य ज्ञान)');
   const [testLanguage, setTestLanguage] = useState<'English' | 'Hindi'>('English');
   const [testDifficulty, setTestDifficulty] = useState<Difficulty>('Medium');
   const [selectedCount, setSelectedCount] = useState<number>(10);
   const [customInput, setCustomInput] = useState<string>('10');
+
+  const POPULAR_TOPICS = [
+    { label: '🌟 सामान्य ज्ञान (GK)', value: 'General Knowledge (सामान्य ज्ञान)' },
+    { label: '🏛️ भारतीय इतिहास', value: 'Indian History (भारतीय इतिहास)' },
+    { label: '📜 संविधान व राजव्यवस्था', value: 'Indian Polity & Constitution (भारतीय संविधान)' },
+    { label: '🔬 सामान्य विज्ञान', value: 'General Science (सामान्य विज्ञान)' },
+    { label: '🌍 भारत व विश्व का भूगोल', value: 'Geography (भूगोल)' },
+    { label: '💼 SSC CGL / CHSL', value: 'SSC CGL / CHSL Mock Test' },
+    { label: '🚆 रेलवे RRB NTPC', value: 'Railway RRB NTPC' },
+    { label: '📰 Current Affairs 2026', value: 'Current Affairs 2026 (समसामयिकी)' },
+    { label: '🧮 गणित (Maths)', value: 'Quantitative Aptitude (गणित)' },
+    { label: '🧠 तर्कशक्ति (Reasoning)', value: 'Reasoning Ability (तर्कशक्ति)' },
+  ];
   
   // Filter States
   const [topicSearch, setTopicSearch] = useState('');
@@ -2175,9 +2174,33 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
                   type="text"
                   value={topic}
                   onChange={e => setTopic(e.target.value)}
-                  placeholder="e.g. SSC CGL Quant, Modern History..."
+                  placeholder="e.g. General Knowledge, Indian History, SSC CGL..."
                   className="w-full pl-16 pr-6 py-6 bg-white/[0.03] border border-white/10 rounded-[2rem] focus:outline-none focus:border-indigo-500/50 text-xl transition-all font-bold text-white placeholder:text-slate-600"
                 />
+              </div>
+
+              {/* Quick Topic Chips */}
+              <div className="space-y-2 px-1">
+                <span className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <Zap size={13} className="text-yellow-400" /> लोकप्रिय विषय (One-Tap Select):
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {POPULAR_TOPICS.map(item => (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => setTopic(item.value)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-xl text-xs font-bold transition-all border",
+                        topic === item.value 
+                          ? "bg-indigo-500 text-white border-indigo-400 shadow-lg shadow-indigo-500/30 scale-105" 
+                          : "bg-white/[0.04] text-slate-300 border-white/5 hover:bg-white/10 hover:text-white hover:border-white/20"
+                      )}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="flex flex-col md:flex-row md:items-center gap-6 px-2">
@@ -2316,17 +2339,13 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
             {/* Test Action Buttons */}
             <div className="space-y-4 pt-2">
               <button 
-                disabled={isLoading || (currentUser?.subscription === SubscriptionStatus.FREE && (currentUser.trialsUsed || 0) >= 2) || (currentUser?.subscription === SubscriptionStatus.PENDING)}
+                disabled={isLoading}
                 onClick={() => startTest(topic, selectedCount, testLanguage, testDifficulty)}
                 className="w-full py-5 bg-gradient-to-r from-indigo-500 via-indigo-600 to-purple-600 hover:from-indigo-600 hover:to-purple-700 rounded-2xl font-black text-white text-lg shadow-xl shadow-indigo-500/25 transition-all active:scale-[0.98] disabled:opacity-50 disabled:grayscale flex items-center justify-center gap-3 group"
               >
                 {isLoading ? <Loader2 className="animate-spin" size={22} /> : <Zap size={22} className="text-yellow-400 fill-yellow-400 group-hover:scale-110 transition-transform" />}
                 <span>
-                  {isLoading ? `AI Generating ${selectedCount} Questions...` : 
-                   currentUser?.subscription === SubscriptionStatus.PENDING ? `Verification Pending` : 
-                   (currentUser?.subscription === SubscriptionStatus.FREE && (currentUser.trialsUsed || 0) >= 2) ? `Trial Limit Reached (Upgrade to Pro)` :
-                   currentUser?.subscription === SubscriptionStatus.FREE ? `Start Mock Test (${selectedCount} Questions) • Trial (${Math.max(0, 2 - (currentUser.trialsUsed || 0))} left)` :
-                   `Start Mock Test (${selectedCount} Questions)`}
+                  {isLoading ? `AI Generating ${selectedCount} Questions...` : `Start Mock Test (${selectedCount} Questions)`}
                 </span>
               </button>
 

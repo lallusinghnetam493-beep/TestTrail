@@ -100,40 +100,43 @@ function saveCachedQuestions(topic: string, language: string, difficulty: Diffic
 }
 
 export const generateQuestions = async (topic: string, count: number, language: string, difficulty: Difficulty): Promise<Question[]> => {
+  const safeTopic = (topic && topic.trim()) ? topic.trim() : "General Knowledge (सामान्य ज्ञान)";
+  const safeCount = Math.min(Math.max(Number(count) || 10, 1), 100);
+
   // 1. Check local cache first for instant retrieval
-  const cached = getCachedQuestions(topic, language, difficulty);
-  if (cached && cached.length >= count) {
-    console.log(`[Gemini] Serving ${count} questions directly from offline cache.`);
-    return cached.slice(0, count);
+  const cached = getCachedQuestions(safeTopic, language, difficulty);
+  if (cached && cached.length >= safeCount) {
+    console.log(`[Gemini] Serving ${safeCount} questions directly from offline cache.`);
+    return cached.slice(0, safeCount);
   }
 
   // 2. Call server API endpoint (recommended approach for full-stack, handles multi-key rotation and batching)
-  try {
-    console.log(`[Gemini Client] Requesting ${count} questions from server /api/questions/generate...`);
-    const resp = await fetch("/api/questions/generate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ topic, count, language, difficulty })
-    });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      console.log(`[Gemini Client] Requesting ${safeCount} questions for "${safeTopic}" (attempt ${attempt + 1})...`);
+      const resp = await fetch("/api/questions/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic: safeTopic, count: safeCount, language, difficulty })
+      });
 
-    if (resp.ok) {
-      const data = await resp.json();
-      if (data?.success && Array.isArray(data.questions) && data.questions.length > 0) {
-        console.log(`[Gemini Client] Server generated ${data.questions.length} questions successfully!`);
-        saveCachedQuestions(topic, language, difficulty, data.questions);
-        return data.questions;
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data?.success && Array.isArray(data.questions) && data.questions.length > 0) {
+          console.log(`[Gemini Client] Server generated ${data.questions.length} questions successfully!`);
+          saveCachedQuestions(safeTopic, language, difficulty, data.questions);
+          return data.questions;
+        }
       }
-    } else {
-      const errData = await resp.json().catch(() => null);
-      if (errData?.error) {
-        console.warn("[Gemini Client] Server returned error, falling back to direct client call:", errData.error);
+    } catch (netErr) {
+      console.warn(`[Gemini Client] Server call attempt ${attempt + 1} failed:`, netErr);
+      if (attempt === 0) {
+        await new Promise(r => setTimeout(r, 1000));
       }
     }
-  } catch (netErr) {
-    console.warn("[Gemini Client] Server route unreachable, attempting direct client generation...", netErr);
   }
 
-  // 3. Fallback: Direct client-side generation using working model pool
+  // 3. Fallback: Direct client-side generation using working model pool if server was unreachable
   const pool = getApiKeyPool();
   console.log(`[Gemini Client Fallback] Active API key count: ${pool.length}`);
 
@@ -141,7 +144,7 @@ export const generateQuestions = async (topic: string, count: number, language: 
 Your task is to generate high-quality, factually accurate multiple choice questions.
 
 STRICT CONSTRAINTS:
-1. Quantity: You MUST generate EXACTLY the number of questions requested (${count}).
+1. Quantity: You MUST generate EXACTLY the number of questions requested (${safeCount}).
 2. Language: All content MUST be in ${language}.
 3. Difficulty: Adaptive ${difficulty} level.
 4. Accuracy: All facts must be 100% accurate.
@@ -149,7 +152,7 @@ STRICT CONSTRAINTS:
 6. Subject: Categorize each question into a relevant subject.
 7. Format: Return ONLY a valid JSON array of objects.`;
 
-  const prompt = `Generate exactly ${count} multiple choice questions about "${topic}" in ${language}. For each question, include 'subject' and 'explanation'. Difficulty: ${difficulty}.`;
+  const prompt = `Generate exactly ${safeCount} multiple choice questions about "${safeTopic}" in ${language}. For each question, include 'subject' and 'explanation'. Difficulty: ${difficulty}.`;
 
   const config = {
     systemInstruction,
@@ -194,10 +197,11 @@ STRICT CONSTRAINTS:
         });
 
         if (response.text) {
-          const questions = JSON.parse(response.text.trim()) as Question[];
+          let clean = response.text.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+          const questions = JSON.parse(clean) as Question[];
           if (Array.isArray(questions) && questions.length > 0) {
             console.log(`[Gemini Fallback] Success! Generated ${questions.length} questions`);
-            saveCachedQuestions(topic, language, difficulty, questions);
+            saveCachedQuestions(safeTopic, language, difficulty, questions);
             return questions;
           }
         }
@@ -212,7 +216,7 @@ STRICT CONSTRAINTS:
 
   // 4. Return cached if available
   if (cached && cached.length > 0) {
-    return cached.slice(0, count);
+    return cached.slice(0, safeCount);
   }
 
   if (isQuotaOrRateLimitError(lastError)) {
