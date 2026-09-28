@@ -2164,8 +2164,12 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
                   type="text"
                   value={topic}
                   onChange={e => {
-                    setTopic(e.target.value);
+                    const val = e.target.value;
+                    setTopic(val);
                     if (topicError) setTopicError(null);
+                    if (/[\u0900-\u097F]/.test(val) && testLanguage === 'English') {
+                      setTestLanguage('Hindi');
+                    }
                   }}
                   onKeyDown={e => {
                     if (e.key === 'Enter') {
@@ -2239,6 +2243,19 @@ const Dashboard: React.FC<DashboardProps> = ({ currentUser, appConfig, testResul
                   </div>
                 </div>
               </div>
+
+              {topic.trim() && (
+                <div className="p-4 bg-indigo-500/10 border border-indigo-500/25 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2.5 text-indigo-300 font-bold">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse shadow-sm shadow-emerald-400"></span>
+                    <span>चयनित विषय: <strong className="text-white font-black text-sm">"{topic.trim()}"</strong></span>
+                  </div>
+                  <div className="flex items-center gap-3 text-slate-300 font-bold text-xs">
+                    <span className="px-2.5 py-1 bg-white/5 rounded-lg border border-white/10">भाषा: <strong className="text-indigo-300">{testLanguage}</strong></span>
+                    <span className="px-2.5 py-1 bg-white/5 rounded-lg border border-white/10">कठिनाई: <strong className="text-indigo-300">{testDifficulty}</strong></span>
+                  </div>
+                </div>
+              )}
 
               {/* Number of Questions Selector (User Custom Selection) */}
               <div className="p-5 glass rounded-2xl border border-white/5 space-y-4">

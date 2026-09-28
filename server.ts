@@ -4,7 +4,7 @@ import cors from "cors";
 import Razorpay from "razorpay";
 import crypto from "crypto";
 import fs from "fs";
-import { GoogleGenAI, Type } from "@google/genai";
+import { GoogleGenAI, Type, ThinkingLevel } from "@google/genai";
 
 // Import Client SDK for server-side work to avoid "Default Credentials" error in AI Studio
 import { initializeApp as initializeClientApp } from "firebase/app";
@@ -101,10 +101,10 @@ async function startServer() {
 
   function getServerApiKeyPool(): string[] {
     const rawSources = [
-      process.env.GEMINI_API_KEY || '',
       (process.env as any).GEMINI_API_KEY_2 || '',
       (process.env as any).GEMINI_API_KEY_3 || '',
       process.env.API_KEY || '',
+      process.env.GEMINI_API_KEY || '',
     ];
 
     const pool: string[] = [];
@@ -116,12 +116,9 @@ async function startServer() {
           key && 
           key.length > 20 && 
           !pool.includes(key) && 
-          !key.includes('MISSING')
+          !key.includes('MISSING') &&
+          !key.startsWith('AIzaSyBe32') // Completely exclude suspended consumer key
         ) {
-          // If key starts with AIzaSyBe32 (known suspended token), skip if other keys exist
-          if (key.startsWith('AIzaSyBe32') && rawSources.some(s => s && !s.includes('AIzaSyBe32') && s.length > 20)) {
-            continue;
-          }
           pool.push(key);
         }
       }
@@ -404,18 +401,19 @@ async function startServer() {
       throw new Error("No active Gemini API key configured.");
     }
 
-    const modelsToTry = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"];
+    // gemini-3.1-flash-lite is fastest and highly available; gemini-3.8-flash is flagship backup
+    const modelsToTry = ["gemini-3.1-flash-lite", "gemini-3.8-flash"];
     let lastError: any = null;
 
     const prompt = `CRITICAL DIRECTIVE: You are an expert examination paper setter for Indian competitive exams (UPSC, SSC CGL/CHSL, Railways RRB, State PSC, Banking, Teaching).
-Generate exactly ${count} multiple choice questions STRICTLY AND SPECIFICALLY on the topic: "${topic}".
+Generate exactly ${count} multiple choice questions STRICTLY, EXCLUSIVELY, AND SPECIFICALLY on the topic: "${topic}".
 Language requirement: ALL questions, options, and explanations MUST BE IN ${language}.
 Difficulty level: ${difficulty}.
 
 STRICT TOPIC RULES:
 1. Every single question MUST directly and exclusively test knowledge of "${topic}".
-   - If "${topic}" is about a specific subject, historical event, mathematical concept, scientific law, or exam syllabus, focus 100% on that exact theme.
-   - DO NOT introduce unrelated general trivia.
+   - If "${topic}" is about a specific subject, person, historical era, mathematical formula, scientific concept, or exam syllabus, 100% of questions must be about that exact theme.
+   - DO NOT introduce unrelated general trivia or questions from other subjects.
 2. Structure for each question:
    - "id": number (1 to ${count})
    - "text": clearly worded question in ${language}
@@ -424,31 +422,7 @@ STRICT TOPIC RULES:
    - "explanation": crisp, accurate 1-2 sentence explanation in ${language} justifying the correct choice
    - "subject": "${topic}"
 
-Output ONLY a valid JSON array of objects according to the schema.`;
-
-    const schemaConfig = {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            id: { type: Type.INTEGER },
-            text: { type: Type.STRING },
-            options: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING },
-              minItems: 4,
-              maxItems: 4
-            },
-            correctAnswerIndex: { type: Type.INTEGER },
-            explanation: { type: Type.STRING },
-            subject: { type: Type.STRING }
-          },
-          required: ["id", "text", "options", "correctAnswerIndex", "explanation", "subject"]
-        }
-      }
-    };
+Output ONLY a valid JSON array of ${count} objects. No markdown backticks or commentary outside the JSON array.`;
 
     // Try each valid key in the pool
     for (let kIdx = 0; kIdx < pool.length; kIdx++) {
@@ -465,38 +439,34 @@ Output ONLY a valid JSON array of objects according to the schema.`;
       for (const modelName of modelsToTry) {
         try {
           console.log(`[Gemini Server] Requesting ${count} Qs on "${topic}" using Key #${kIdx + 1} with ${modelName}...`);
-          let responseText = '';
-          try {
-            const response = await client.models.generateContent({
-              model: modelName,
-              contents: prompt,
-              config: schemaConfig
-            });
-            responseText = response.text || '';
-          } catch (schemaErr: any) {
-            console.warn(`[Gemini Server] Schema mode failed on ${modelName}, trying standard json:`, schemaErr?.message || schemaErr);
-            const fallbackResponse = await client.models.generateContent({
-              model: modelName,
-              contents: `${prompt}\nOUTPUT STRICTLY A VALID JSON ARRAY OF OBJECTS ONLY.`,
-              config: { responseMimeType: "application/json" }
-            });
-            responseText = fallbackResponse.text || '';
+          
+          const config: any = {
+            responseMimeType: "application/json"
+          };
+          if (modelName.includes("3.8")) {
+            config.thinkingConfig = { thinkingLevel: ThinkingLevel.LOW };
           }
 
+          const response = await client.models.generateContent({
+            model: modelName,
+            contents: prompt,
+            config
+          });
+
+          const responseText = response.text || '';
           if (responseText) {
             const parsed = extractJsonArray(responseText);
             if (Array.isArray(parsed) && parsed.length > 0) {
-              console.log(`[Gemini Server] Success! Model ${modelName} returned ${parsed.length} questions for "${topic}".`);
+              console.log(`[Gemini Server] Success! Model ${modelName} returned ${parsed.length} questions strictly for "${topic}".`);
               return parsed;
             }
           }
         } catch (err: any) {
           lastError = err;
           const msg = String(err?.message || err);
-          console.warn(`[Gemini Server] Attempt failed (Key #${kIdx + 1}, ${modelName}):`, msg.slice(0, 100));
-          // If rate limited or service unavailable, try next model or next key
+          console.warn(`[Gemini Server] Attempt failed (Key #${kIdx + 1}, ${modelName}):`, msg.slice(0, 120));
           if (msg.includes("503") || msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
-            await new Promise(r => setTimeout(r, 600));
+            await new Promise(r => setTimeout(r, 400));
           }
         }
       }
@@ -521,8 +491,8 @@ Output ONLY a valid JSON array of objects according to the schema.`;
       let generatedQuestions: any[] = [];
 
       if (pool.length > 0) {
-        // Strategy: If count <= 25, generate all in a single call for high speed and consistency
-        if (totalCount <= 25) {
+        // Strategy: If count <= 20, generate all in a single call for high speed and consistency
+        if (totalCount <= 20) {
           try {
             const questions = await generateQuestionsWithGemini(topic, totalCount, language, difficulty, pool);
             generatedQuestions.push(...questions);
@@ -530,34 +500,47 @@ Output ONLY a valid JSON array of objects according to the schema.`;
             console.error(`[Gemini Server] Single call failed for "${topic}":`, err);
           }
         } else {
-          // If count > 25, break into 25-question chunks with sequential key rotation
-          const chunkSize = 25;
+          // If count > 20, break into 15-question chunks with sequential key rotation
+          const chunkSize = 15;
           let remaining = totalCount;
           let chunkIndex = 0;
 
-          while (remaining > 0) {
+          while (remaining > 0 && chunkIndex < 8) {
             const currentChunk = Math.min(remaining, chunkSize);
             try {
               // Rotate active pool order for each chunk
               const rotatedPool = [...pool.slice(chunkIndex % pool.length), ...pool.slice(0, chunkIndex % pool.length)];
               const chunkResult = await generateQuestionsWithGemini(topic, currentChunk, language, difficulty, rotatedPool);
               generatedQuestions.push(...chunkResult);
+              remaining -= chunkResult.length;
             } catch (chunkErr) {
               console.warn(`[Gemini Server] Chunk ${chunkIndex + 1} failed:`, chunkErr);
               break;
             }
-            remaining -= currentChunk;
             chunkIndex++;
           }
         }
       }
 
-      // If AI generation fell short, supplement with subject-specific bank
-      if (generatedQuestions.length < totalCount) {
-        const needed = totalCount - generatedQuestions.length;
-        console.log(`[Gemini Server] Supplementing ${needed} questions for "${topic}" from curated bank...`);
-        const fallback = getCuratedQuestions(topic, needed, language, difficulty);
-        generatedQuestions.push(...fallback);
+      // If AI returned fewer questions, fetch remaining questions strictly on the requested topic
+      if (generatedQuestions.length > 0 && generatedQuestions.length < totalCount && pool.length > 0) {
+        const remainingNeeded = totalCount - generatedQuestions.length;
+        try {
+          console.log(`[Gemini Server] Supplementing ${remainingNeeded} remaining questions for "${topic}" via AI...`);
+          const moreQuestions = await generateQuestionsWithGemini(topic, remainingNeeded, language, difficulty, pool);
+          generatedQuestions.push(...moreQuestions);
+        } catch (fillErr) {
+          console.warn("[Gemini Server] Could not fetch extra questions:", fillErr);
+        }
+      }
+
+      // If all AI attempts failed, do not silently send unrelated topics
+      if (generatedQuestions.length === 0) {
+        console.error(`[Gemini Server] AI completely failed for topic "${topic}".`);
+        return res.status(503).json({
+          success: false,
+          error: `Could not generate questions for topic "${topic}". Please retry in a few moments.`
+        });
       }
 
       // Deduplicate questions by text
@@ -584,10 +567,11 @@ Output ONLY a valid JSON array of objects according to the schema.`;
       console.log(`[Gemini Server] Successfully delivered ${finalQuestions.length} tailored questions for "${topic}"`);
       return res.json({ success: true, questions: finalQuestions });
     } catch (err: any) {
-      console.error("[Gemini Server] Generation Error, using fallback:", err);
-      const totalCount = Math.min(Math.max(parseInt(String(req.body?.count), 10) || 10, 1), 100);
-      const fallback = getCuratedQuestions(req.body?.topic || "General Knowledge", totalCount, req.body?.language || "English", req.body?.difficulty || "Medium");
-      return res.json({ success: true, questions: fallback });
+      console.error("[Gemini Server] Generation Error:", err);
+      return res.status(500).json({
+        success: false,
+        error: err?.message || "Failed to generate test for this topic. Please try again."
+      });
     }
   });
 
